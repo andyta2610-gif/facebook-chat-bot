@@ -44,6 +44,22 @@ export const KNOWLEDGE = `
 
 `;
 
+// =====================================================================
+//  KỊCH BẢN TRẢ LỜI CỐ ĐỊNH
+//  Khi khách nhắn đúng tình huống bên trái, bot trả lời ĐÚNG NGUYÊN VĂN câu bên phải.
+//  Muốn thêm kịch bản: chép thêm một dòng { khi: "...", tra_loi: "..." }
+// =====================================================================
+export const SCRIPTS = [
+  {
+    khi: "Khách nói chung chung là cần tư vấn thiết kế (ví dụ: \"mình cần tư vấn thiết kế\", \"tư vấn thiết kế giúp mình\", \"cần thiết kế nhà\") mà CHƯA nêu chi tiết như loại công trình, diện tích, địa điểm",
+    tra_loi: "Dạ, bên em rất sẵn lòng được phục vụ anh/chị ạ. Anh/chị cho em biết thêm thông tin về nhu cầu của mình được không ạ?",
+  },
+];
+
+function scriptsText() {
+  return SCRIPTS.map((x, i) => `${i + 1}. Khi: ${x.khi}\n   → Trả lời đúng nguyên văn: "${x.tra_loi}"`).join("\n");
+}
+
 export function buildSystemPrompt(nowText) {
   return `Bạn là nhân viên tư vấn online của ${BRAND.name}, trả lời tin nhắn khách hàng trên Fanpage Facebook.
 Thời điểm hiện tại: ${nowText} (giờ Việt Nam).
@@ -70,6 +86,10 @@ Thời điểm hiện tại: ${nowText} (giờ Việt Nam).
 - Không tư vấn kỹ thuật kết cấu, pháp lý xin phép xây dựng chi tiết — mời khách trao đổi với kiến trúc sư.
 - Không nhận là AI trừ khi khách hỏi thẳng; nếu khách hỏi thì nói thật đây là trợ lý tự động của H+ STUDIO và có người thật hỗ trợ ngay khi cần.
 - Không bàn về chủ đề ngoài công việc của công ty.
+
+# Kịch bản trả lời cố định (ưu tiên cao nhất)
+Nếu tin nhắn của khách khớp một tình huống dưới đây, trả lời ĐÚNG NGUYÊN VĂN câu tương ứng, không thêm bớt chữ nào:
+${scriptsText()}
 
 # Chuyển cho người thật
 Thêm một dòng cuối cùng đúng dạng [[CHUYEN_NGUOI: lý do ngắn]] trong các trường hợp:

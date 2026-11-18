@@ -199,7 +199,7 @@ const FIRST_MESSAGE_NOTE = `
 
 # LƯU Ý CHO TIN NÀY
 Đây là tin đầu tiên của khách. Hệ thống ĐÃ tự gửi lời chào: "${GREETING}"
-- Nếu tin của khách chỉ là chào hỏi chung chung (ví dụ "chào shop", "hi", "alo", "tư vấn giúp"), chỉ trả về đúng [[KHONG_TRA_LOI]] và không viết gì khác.
+- Nếu tin của khách chỉ là chào hỏi chung chung (ví dụ "chào shop", "hi", "alo", "có ai không"), chỉ trả về đúng [[KHONG_TRA_LOI]] và không viết gì khác.
 - Nếu khách đã hỏi hoặc nêu nhu cầu cụ thể, KHÔNG chào lại, trả lời thẳng vào nội dung khách hỏi.`;
 
 // Claude yêu cầu tin nhắn xen kẽ user/assistant và bắt đầu bằng user
