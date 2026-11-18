@@ -142,6 +142,9 @@ export const GREETING_INTRO = "Chào anh/chị, cám ơn anh/chị đã dành th
 // Lời chào đầy đủ (dùng khi khách chỉ chào hỏi)
 export const GREETING = GREETING_INTRO + " Em có thể giúp gì được cho mình ạ?";
 
+// Câu nhắc khi khách im lặng một lúc mà chưa cho biết loại công trình (gửi tối đa 1 lần)
+export const FOLLOWUP_TEXT = "Dạ, anh/chị đang dự định làm nhà phố, biệt thự hay căn hộ ạ?";
+
 export const FALLBACK_REPLY = `Dạ ${BRAND.name} đã nhận được tin nhắn của anh/chị. Tư vấn viên sẽ phản hồi sớm nhất ạ. Cần gấp anh/chị gọi hotline ${BRAND.hotline} nhé.`;
 
 export const ATTACHMENT_REPLY = `Dạ em đã nhận được hình/file anh/chị gửi. Em chuyển cho kiến trúc sư xem và phản hồi anh/chị sớm ạ. Anh/chị cho em xin số điện thoại để tiện liên hệ nhé.`;

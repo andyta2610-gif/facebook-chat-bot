@@ -1,5 +1,5 @@
 // H+ STUDIO — Messenger bot (Cloudflare Workers + Claude API)
-import { buildSystemPrompt, FALLBACK_REPLY, ATTACHMENT_REPLY, GREETING, GREETING_INTRO } from "./knowledge.js";
+import { buildSystemPrompt, FALLBACK_REPLY, ATTACHMENT_REPLY, GREETING, GREETING_INTRO, FOLLOWUP_TEXT } from "./knowledge.js";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 const HISTORY_LIMIT = 20;                 // số tin nhắn gần nhất gửi kèm cho Claude
@@ -175,6 +175,7 @@ export class Conversation {
       await st.put("lastIn", now);
       if (((await st.get("handoffUntil")) || 0) > now) return new Response("skip_handoff");
 
+      await st.delete("followUpAt");   // khách đã nhắn lại → huỷ nhắc
       const pending = (await st.get("pending")) || [];
       pending.push(body.item);
       await st.put("pending", pending);
@@ -189,7 +190,8 @@ export class Conversation {
 
     if (url.pathname === "/admin") {
       await st.delete(["handoffUntil", "pending", "firstAt"]);
-      if (body.cmd === "#reset") await st.delete(["hist", "lastReplyAt"]);
+      await st.delete("followUpAt");
+      if (body.cmd === "#reset") await st.delete(["hist", "lastReplyAt", "followUpDone"]);
       return new Response("ok");
     }
 
@@ -211,14 +213,16 @@ export class Conversation {
     const pending = (await st.get("pending")) || [];
     const psid = await st.get("psid");
     await st.delete(["pending", "firstAt"]);
-    if (!pending.length || !psid) return;
+    if (!psid) return;
+    const followUpAt = (await st.get("followUpAt")) || 0;
+    if (!pending.length && !(followUpAt && followUpAt <= Date.now() + 1000)) return;
 
     const tr = [];
     this.env.__log = (stage, detail) => tr.push({ t: Date.now(), s: stage, ...(detail ? { d: String(detail).slice(0, 300) } : {}) });
-    L(this.env, "reply_batch", `${pending.length} tin`);
     try {
       if (((await st.get("handoffUntil")) || 0) > Date.now()) L(this.env, "skip_handoff");
-      else await this.reply(psid, pending);
+      else if (pending.length) { L(this.env, "reply_batch", `${pending.length} tin`); await this.reply(psid, pending); }
+      else await this.followUp(psid);
     } catch (e) {
       console.error("reply error", e);
       L(this.env, "error", e?.message || e);
@@ -290,6 +294,13 @@ export class Conversation {
     await this.saveHistory(history);
 
     if (hasAttach || images.length) await notify(env, `📎 Khách vừa gửi hình/file trên Fanpage. Vào hộp thư để xem: https://business.facebook.com/latest/inbox`);
+    // Hẹn nhắc khách 1 lần nếu khách im lặng (chỉ khi chưa chuyển người)
+    if (!handoffReason && said && !(await st.get("followUpDone"))) {
+      const at = now() + Number(env.FOLLOWUP_MINUTES || 5) * 60 * 1000;
+      await st.put("followUpAt", at);
+      await st.setAlarm(at);
+    }
+
     if (handoffReason) {
       L(env, "handoff", handoffReason);
       await this.setHandoff();
@@ -297,6 +308,22 @@ export class Conversation {
         `🔔 Khách Fanpage cần tư vấn viên\nLý do: ${handoffReason}\nTin cuối: "${userText.slice(0, 300)}"\n` +
         `Trả lời tại: https://business.facebook.com/latest/inbox\n(Bot đã tạm dừng với khách này. Gõ #bot trong hội thoại để bật lại.)`);
     }
+  }
+
+  // Khách im lặng sau câu hỏi của bot → nhắc 1 lần (nếu chưa biết loại công trình)
+  async followUp(psid) {
+    const env = this.env, st = this.storage;
+    await st.delete("followUpAt");
+    await st.put("followUpDone", true);
+    const history = (await st.get("hist")) || [];
+    if (!history.length) return;
+    const raw = await askClaude(env, [...history, { role: "user", content: FOLLOWUP_PROBE }]);
+    if (SKIP_MARKER.test(raw) || !raw.trim()) { L(env, "followup_skip"); return; }
+    const text = raw.replace(HANDOFF_MARKER, "").trim();
+    await sendText(env, psid, text);
+    L(env, "followup_sent");
+    history.push({ role: "assistant", content: text });
+    await this.saveHistory(history);
   }
 
   async saveHistory(history) {
@@ -343,6 +370,10 @@ const FIRST_MESSAGE_NOTE = `
 Đây là tin đầu tiên của khách. Hệ thống sẽ tự đặt câu giới thiệu này lên ĐẦU câu trả lời của bạn: "${GREETING_INTRO}"
 - Nếu tin của khách chỉ là chào hỏi chung chung (ví dụ "chào shop", "hi", "alo", "có ai không"), chỉ trả về đúng [[KHONG_TRA_LOI]] và không viết gì khác (hệ thống sẽ gửi lời chào đầy đủ).
 - Nếu khách đã nêu nhu cầu (kể cả chung chung như "cần tư vấn thiết kế"), KHÔNG chào lại, KHÔNG giới thiệu lại, chỉ viết phần trả lời tiếp nối câu giới thiệu.`;
+
+const FOLLOWUP_PROBE = `[THÔNG BÁO HỆ THỐNG, không phải lời khách: khách chưa trả lời tin nhắn gần nhất của bạn một lúc rồi.]
+- Nếu trong hội thoại khách CHƯA cho biết loại công trình (nhà phố, biệt thự, căn hộ...), trả lời đúng nguyên văn: "${FOLLOWUP_TEXT}"
+- Nếu khách đã cho biết loại công trình rồi, chỉ trả về đúng [[KHONG_TRA_LOI]].`;
 
 // Claude yêu cầu tin nhắn xen kẽ user/assistant và bắt đầu bằng user
 function normalize(history) {

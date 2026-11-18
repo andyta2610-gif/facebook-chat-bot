@@ -9,6 +9,8 @@ HANDOFF_HOURS = "12"
 # Bot chờ khách ngừng nhắn bao nhiêu giây rồi mới trả lời gộp (tối đa MAX_WAIT_SECONDS)
 DEBOUNCE_SECONDS = "8"
 MAX_WAIT_SECONDS = "30"
+# Khách im lặng bao nhiêu phút thì bot nhắc 1 lần "anh/chị dự định làm nhà phố, biệt thự hay căn hộ"
+FOLLOWUP_MINUTES = "5"
 # APP_ID: ID của app Meta (dạng số), dùng để phân biệt tin bot gửi với tin nhân viên gửi
 APP_ID = "2697118804024412"
 # Tài khoản Facebook được dùng lệnh thử nghiệm #reset / #bot khi nhắn vào Fanpage (PSID, cách nhau bằng dấu phẩy)

@@ -127,7 +127,7 @@ assert.deepEqual(claudeCalls()[0].body.messages.map((m) => m.role), ["user", "as
 // 5. Meta gửi trùng → không xếp hàng lại
 calls.length = 0;
 await post(msgEvent("U1", "70m2", "m3"));
-assert.equal(objects.get("U1").alarmAt, null, "tin trùng không tạo lượt trả lời mới");
+assert.equal(storageOf("U1").has("pending"), false, "tin trùng không tạo lượt trả lời mới");
 
 // 6. Chuyển người: ẩn marker, báo Telegram, bot dừng
 calls.length = 0;
@@ -138,7 +138,7 @@ assert.deepEqual(sentTexts(), ["Dạ em đã chuyển cho kiến trúc sư ạ."
 assert.ok(calls.some((c) => c.url.includes("telegram") && c.body.text.includes("khách để lại SĐT")));
 calls.length = 0;
 await post(msgEvent("U1", "Alo?", "m6"));
-assert.equal(objects.get("U1").alarmAt, null, "bot phải im khi đang chuyển người");
+assert.equal(storageOf("U1").has("pending"), false, "bot phải im khi đang chuyển người");
 
 // 7. Nhân viên gõ #bot → bot bật lại
 await post(echo("U1", 999, "#bot", "e1"));
@@ -190,13 +190,42 @@ await post({ object: "page", entry: [{ messaging: [{ sender: { id: "U1" }, recip
 await post(msgEvent("U1", "👍", "m8d"));
 await post(msgEvent("U1", "😍😍 ", "m8e"));
 await post(msgEvent("U1", ":)", "m8f"));
-assert.equal(objects.get("U1").alarmAt, null, "không xếp hàng trả lời");
+assert.equal(storageOf("U1").has("pending"), false, "không xếp hàng trả lời");
 assert.equal(calls.length, 0, "không gửi gì, kể cả dấu đã xem");
 // tin có chữ kèm icon vẫn trả lời bình thường
 claudeReply = "Dạ vâng ạ.";
 await post(msgEvent("U1", "Ok bạn 👍", "m8g"));
 await fireAlarm("U1");
 assert.deepEqual(sentTexts(), ["Dạ vâng ạ."]);
+
+// 9e. Khách im lặng sau câu chào → nhắc 1 lần; lần sau không nhắc nữa
+const { FOLLOWUP_TEXT } = await import("../src/knowledge.js");
+calls.length = 0;
+claudeReply = "[[KHONG_TRA_LOI]]";
+await post(msgEvent("U5", "Chào shop", "f1"));
+await fireAlarm("U5");                       // gửi lời chào
+assert.ok(storageOf("U5").get("followUpAt") > Date.now(), "đã hẹn giờ nhắc");
+storageOf("U5").set("followUpAt", Date.now() - 1000);   // giả lập 5 phút trôi qua
+calls.length = 0;
+claudeReply = FOLLOWUP_TEXT;
+await fireAlarm("U5");
+assert.deepEqual(sentTexts(), [FOLLOWUP_TEXT]);
+assert.ok(claudeCalls().at(-1).body.messages.at(-1).content.includes("THÔNG BÁO HỆ THỐNG"));
+assert.equal(storageOf("U5").get("followUpDone"), true);
+// khách trả lời rồi lại im → không nhắc lần 2
+calls.length = 0;
+claudeReply = "Dạ căn hộ ạ, anh/chị ở khu vực nào ạ?";
+await post(msgEvent("U5", "Căn hộ", "f2"));
+await fireAlarm("U5");
+assert.equal(storageOf("U5").has("followUpAt"), false, "không hẹn nhắc lần 2");
+// 9f. Khách nhắn lại trước giờ nhắc → huỷ nhắc
+claudeReply = "[[KHONG_TRA_LOI]]";
+await post(msgEvent("U6", "Hi", "f3"));
+await fireAlarm("U6");
+assert.ok(storageOf("U6").has("followUpAt"));
+claudeReply = "Dạ vâng.";
+await post(msgEvent("U6", "Mình muốn hỏi chút", "f4"));
+assert.equal(storageOf("U6").has("followUpAt"), false, "khách nhắn lại thì huỷ nhắc");
 
 // 10. Lỗi Claude: khách mới vẫn có lời chào; khách cũ nhận câu dự phòng có hotline
 claudeFails = true;
