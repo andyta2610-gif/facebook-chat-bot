@@ -1,0 +1,17 @@
+name = "hplus-messenger-bot"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+CLAUDE_MODEL = "claude-sonnet-5-5"
+HANDOFF_HOURS = "12"
+# APP_ID: ID của app Meta (dạng số), dùng để phân biệt tin bot gửi với tin nhân viên gửi
+APP_ID = "DIEN_APP_ID"
+
+[[kv_namespaces]]
+binding = "BOT_KV"
+id = "DIEN_KV_ID"   # lấy từ lệnh: npx wrangler kv namespace create BOT_KV
+
+# Các khoá bí mật KHÔNG ghi ở đây, nhập bằng lệnh `npx wrangler secret put ...`:
+#   ANTHROPIC_API_KEY, PAGE_ACCESS_TOKEN, APP_SECRET, VERIFY_TOKEN
+#   (tuỳ chọn) TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
