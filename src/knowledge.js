@@ -137,7 +137,10 @@ ${KNOWLEDGE}`;
 }
 
 // Lời chào cố định gửi cho tin nhắn đầu tiên của khách
-export const GREETING = "Chào anh/chị, cám ơn anh/chị đã dành thời gian quan tâm đến các thiết kế của H+ studio. Em là trợ lý tự động của H+, em sẽ ghi nhận nhu cầu ban đầu của anh/chị, sau đó kiến trúc sư bên em sẽ liên hệ trực tiếp để tư vấn chi tiết hơn. Em có thể giúp gì được cho mình ạ?";
+// Phần giới thiệu (dùng khi khách đã nêu nhu cầu ngay tin đầu: ghép với câu trả lời thành 1 tin)
+export const GREETING_INTRO = "Chào anh/chị, cám ơn anh/chị đã dành thời gian quan tâm đến các thiết kế của H+ studio. Em là trợ lý tự động của H+, em sẽ ghi nhận nhu cầu ban đầu của anh/chị, sau đó kiến trúc sư bên em sẽ liên hệ trực tiếp để tư vấn chi tiết hơn.";
+// Lời chào đầy đủ (dùng khi khách chỉ chào hỏi)
+export const GREETING = GREETING_INTRO + " Em có thể giúp gì được cho mình ạ?";
 
 export const FALLBACK_REPLY = `Dạ ${BRAND.name} đã nhận được tin nhắn của anh/chị. Tư vấn viên sẽ phản hồi sớm nhất ạ. Cần gấp anh/chị gọi hotline ${BRAND.hotline} nhé.`;
 

@@ -1,5 +1,5 @@
 // H+ STUDIO — Messenger bot (Cloudflare Workers + Claude API)
-import { buildSystemPrompt, FALLBACK_REPLY, ATTACHMENT_REPLY, GREETING } from "./knowledge.js";
+import { buildSystemPrompt, FALLBACK_REPLY, ATTACHMENT_REPLY, GREETING, GREETING_INTRO } from "./knowledge.js";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 const HISTORY_LIMIT = 20;                 // số tin nhắn gần nhất gửi kèm cho Claude
@@ -244,11 +244,6 @@ export class Conversation {
     const userText = [texts.join("\n"), ...notes].filter(Boolean).join("\n");
     history.push({ role: "user", content: userText });
 
-    if (isFirst) {
-      await sendText(env, psid, GREETING);
-      L(env, "greeting");
-    }
-
     let reply = null, handoffReason = null;
     try {
       let raw;
@@ -271,8 +266,13 @@ export class Conversation {
       handoffReason = "Bot gặp lỗi khi gọi AI";
     }
 
-    if (reply) await sendText(env, psid, reply);
-    const said = [isFirst ? GREETING : null, reply].filter(Boolean).join("\n");
+    // Tin đầu: chỉ chào → lời chào đầy đủ; đã có nhu cầu → giới thiệu + câu trả lời gộp thành 1 tin
+    let said = reply;
+    if (isFirst) {
+      said = reply ? `${GREETING_INTRO}\n\n${reply}` : GREETING;
+      L(env, "greeting");
+    }
+    if (said) await sendText(env, psid, said);
     if (said) history.push({ role: "assistant", content: said });
     await this.saveHistory(history);
 
@@ -327,9 +327,9 @@ async function askClaude(env, history, isFirst = false, images = []) {
 const FIRST_MESSAGE_NOTE = `
 
 # LƯU Ý CHO TIN NÀY
-Đây là tin đầu tiên của khách. Hệ thống ĐÃ tự gửi lời chào: "${GREETING}"
-- Nếu tin của khách chỉ là chào hỏi chung chung (ví dụ "chào shop", "hi", "alo", "có ai không"), chỉ trả về đúng [[KHONG_TRA_LOI]] và không viết gì khác.
-- Nếu khách đã hỏi hoặc nêu nhu cầu cụ thể, KHÔNG chào lại, trả lời thẳng vào nội dung khách hỏi.`;
+Đây là tin đầu tiên của khách. Hệ thống sẽ tự đặt câu giới thiệu này lên ĐẦU câu trả lời của bạn: "${GREETING_INTRO}"
+- Nếu tin của khách chỉ là chào hỏi chung chung (ví dụ "chào shop", "hi", "alo", "có ai không"), chỉ trả về đúng [[KHONG_TRA_LOI]] và không viết gì khác (hệ thống sẽ gửi lời chào đầy đủ).
+- Nếu khách đã nêu nhu cầu (kể cả chung chung như "cần tư vấn thiết kế"), KHÔNG chào lại, KHÔNG giới thiệu lại, chỉ viết phần trả lời tiếp nối câu giới thiệu.`;
 
 // Claude yêu cầu tin nhắn xen kẽ user/assistant và bắt đầu bằng user
 function normalize(history) {

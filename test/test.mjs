@@ -81,7 +81,7 @@ const msgEvent = (psid, text, mid) => ({ object: "page", entry: [{ messaging: [{
 const echo = (psid, app_id, text, mid) => ({ object: "page", entry: [{ messaging: [{ sender: { id: "PAGE" }, recipient: { id: psid }, message: { is_echo: true, app_id, text, mid } }] }] });
 const sentTexts = () => calls.filter((c) => c.url.includes("graph.facebook") && c.body?.message?.text).map((c) => c.body.message.text);
 const claudeCalls = () => calls.filter((c) => c.url.includes("anthropic"));
-const GREET = (await import("../src/knowledge.js")).GREETING;
+const { GREETING: GREET, GREETING_INTRO: INTRO } = await import("../src/knowledge.js");
 
 // 1. Xác minh webhook
 let r = await worker.fetch(new Request("https://x/webhook?hub.mode=subscribe&hub.verify_token=vt&hub.challenge=abc"), env, {});
@@ -101,6 +101,13 @@ assert.equal(sentTexts().length, 0, "chưa trả lời khi khách có thể còn
 assert.ok(calls.some((c) => c.body?.sender_action === "typing_on"), "hiện đang soạn tin");
 await fireAlarm("U1");
 assert.deepEqual(sentTexts(), [GREET]);
+
+// 3b. Khách mới nêu nhu cầu ngay tin đầu → 1 tin duy nhất: giới thiệu + câu trả lời
+calls.length = 0;
+claudeReply = "Dạ, bên em rất sẵn lòng được phục vụ anh/chị ạ.";
+await post(msgEvent("U9", "Mình cần tư vấn thiết kế", "m90"));
+await fireAlarm("U9");
+assert.deepEqual(sentTexts(), [INTRO + "\n\nDạ, bên em rất sẵn lòng được phục vụ anh/chị ạ."]);
 
 // 4. Khách nhắn liền 3 tin → bot gộp lại, gọi Claude 1 lần, trả lời 1 lần
 calls.length = 0;
