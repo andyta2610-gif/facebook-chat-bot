@@ -25,7 +25,7 @@ function makeStorage(rec) {
 const env = {
   BOT_KV, APP_ID: "111", APP_SECRET: "secret", VERIFY_TOKEN: "vt",
   PAGE_ACCESS_TOKEN: "pat", ANTHROPIC_API_KEY: "k",
-  TELEGRAM_BOT_TOKEN: "tg", TELEGRAM_CHAT_ID: "1",
+  TELEGRAM_BOT_TOKEN: "tg", TELEGRAM_CHAT_ID: "1", ZALO_BOT_TOKEN: "zl",
   DEBOUNCE_SECONDS: "8", MAX_WAIT_SECONDS: "30", TEST_PSIDS: "ADMIN",
   CONVO: {
     idFromName: (n) => n,
@@ -266,6 +266,32 @@ assert.equal(storageOf("U5").has("hist"), false);
 // 10d. Trang chính sách quyền riêng tư
 r = await worker.fetch(new Request("https://x/privacy"), env, {});
 assert.ok((await r.text()).includes("Chính sách quyền riêng tư"));
+
+// 10e. Zalo: setup webhook, liên kết tài khoản, nhận thông báo khi khách để lại SĐT
+calls.length = 0;
+r = await worker.fetch(new Request("https://bot.example/zalo/setup"), env, {});
+assert.ok((await r.text()).includes("Đã kết nối Zalo Bot"));
+const setCall = calls.find((c) => c.url.includes("zaloplatforms") && c.url.endsWith("/setWebhook"));
+assert.equal(setCall.body.url, "https://bot.example/zalo");
+const zsecret = setCall.body.secret_token;
+r = await worker.fetch(new Request("https://bot.example/zalo", { method: "POST", body: "{}", headers: { "x-bot-api-secret-token": "sai" } }), env, {});
+assert.equal(r.status, 403, "sai secret bị chặn");
+const zmsg = (id) => JSON.stringify({ ok: true, result: { event_name: "message.text.received", message: { chat: { id }, from: { id }, text: "xin chào" } } });
+await worker.fetch(new Request("https://bot.example/zalo", { method: "POST", body: zmsg("Z1"), headers: { "x-bot-api-secret-token": zsecret } }), env, {});
+assert.equal(kv.get("zalo_chat_id"), "Z1");
+await worker.fetch(new Request("https://bot.example/zalo", { method: "POST", body: zmsg("Z2"), headers: { "x-bot-api-secret-token": zsecret } }), env, {});
+assert.equal(kv.get("zalo_chat_id"), "Z1", "người khác không chiếm được");
+calls.length = 0; claudeFails = false;
+claudeReply = "Dạ anh cho em xin số điện thoại ạ.";
+await post(msgEvent("U7", "Biệt thự 3 tầng ở Thủ Đức", "z1"));
+await fireAlarm("U7");
+calls.length = 0;
+claudeReply = "Dạ em cảm ơn anh ạ.\n[[CHUYEN_NGUOI: khách để lại SĐT]]";
+await post(msgEvent("U7", "0909123456, mình tên Nam", "z2"));
+await fireAlarm("U7");
+const zcall = calls.find((c) => c.url.includes("zaloplatforms") && c.url.endsWith("/sendMessage"));
+assert.ok(zcall && zcall.body.chat_id === "Z1");
+assert.ok(zcall.body.text.includes("0909123456") && zcall.body.text.includes("Thủ Đức"), "báo đủ thông tin khách");
 
 // 11. Trang /status
 r = await worker.fetch(new Request("https://x/status"), env, {});

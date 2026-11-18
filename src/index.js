@@ -27,6 +27,12 @@ export default {
       };
       return new Response(JSON.stringify(status, null, 2), { headers: { "content-type": "application/json; charset=utf-8" } });
     }
+    if (url.pathname === "/zalo/setup") {
+      return new Response(await zaloSetup(env, url.origin), { headers: { "content-type": "text/plain; charset=utf-8" } });
+    }
+    if (url.pathname === "/zalo" && request.method === "POST") {
+      return zaloWebhook(request, env);
+    }
     if (url.pathname === "/privacy") {
       return new Response(PRIVACY_HTML, { headers: { "content-type": "text/html; charset=utf-8" } });
     }
@@ -319,9 +325,10 @@ export class Conversation {
     if (handoffReason) {
       L(env, "handoff", handoffReason);
       await this.setHandoff();
+      const said = history.filter((h) => h.role === "user").map((h) => `- ${h.content}`).join("\n").slice(-1200);
       await notify(env,
-        `🔔 Khách Fanpage cần tư vấn viên\nLý do: ${handoffReason}\nTin cuối: "${userText.slice(0, 300)}"\n` +
-        `Trả lời tại: https://business.facebook.com/latest/inbox\n(Bot đã tạm dừng với khách này. Gõ #bot trong hội thoại để bật lại.)`);
+        `🔔 KHÁCH FANPAGE CẦN KTS LIÊN HỆ\nLý do: ${handoffReason}\n\nKhách đã nhắn:\n${said}\n\n` +
+        `Xem hội thoại: https://business.facebook.com/latest/inbox\n(Bot đã tạm dừng với khách này. Gõ #bot trong hội thoại để bật lại.)`);
     }
   }
 
@@ -462,12 +469,79 @@ async function saveTrace(env, items) {
 
 // Báo cho anh qua Telegram (không bắt buộc)
 async function notify(env, text) {
-  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
-  await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+  const jobs = [];
+  if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
+    jobs.push(fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text }),
+    }));
+  }
+  if (env.ZALO_BOT_TOKEN) {
+    const chatId = env.ZALO_CHAT_ID || (await env.BOT_KV.get("zalo_chat_id"));
+    if (chatId) jobs.push(zaloSend(env, chatId, text));
+    else L(env, "zalo_not_linked");
+  }
+  const results = await Promise.allSettled(jobs);
+  for (const r of results) if (r.status === "rejected") console.error("notify error", r.reason);
+  if (jobs.length) L(env, "notified");
+}
+
+// ---------------------------------------------------------------------
+//  Zalo Bot: báo cho anh qua Zalo
+// ---------------------------------------------------------------------
+const ZALO_API = "https://bot-api.zaloplatforms.com";
+
+async function zaloSend(env, chatId, text) {
+  const res = await fetch(`${ZALO_API}/bot${env.ZALO_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text }),
-  }).catch((e) => console.error("notify error", e));
+    body: JSON.stringify({ chat_id: String(chatId), text: text.slice(0, 1990) }),
+  });
+  if (!res.ok) L(env, "zalo_error", `${res.status} ${await res.text()}`);
+  return res;
+}
+
+async function zaloSecret(env) {
+  const data = new TextEncoder().encode(`${env.APP_SECRET || ""}:zalo-webhook`);
+  const h = await crypto.subtle.digest("SHA-256", data);
+  return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 40);
+}
+
+// Mở /zalo/setup một lần để Zalo gửi tin nhắn về bot
+async function zaloSetup(env, origin) {
+  if (!env.ZALO_BOT_TOKEN) return "Chưa có ZALO_BOT_TOKEN. Hãy thêm mã Zalo Bot vào Cloudflare (Secret) rồi mở lại trang này.";
+  const res = await fetch(`${ZALO_API}/bot${env.ZALO_BOT_TOKEN}/setWebhook`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: `${origin}/zalo`, secret_token: await zaloSecret(env) }),
+  });
+  const body = await res.text();
+  let ok = res.ok;
+  try { ok = ok && JSON.parse(body).ok !== false; } catch {}
+  const linked = await env.BOT_KV.get("zalo_chat_id");
+  return ok
+    ? `✅ Đã kết nối Zalo Bot.\n${linked ? "Tài khoản Zalo nhận thông báo đã được liên kết." : "Bước cuối: mở Zalo, nhắn một tin bất kỳ (ví dụ: xin chào) cho Zalo Bot vừa tạo để liên kết tài khoản nhận thông báo."}`
+    : `❌ Zalo báo lỗi: ${body.slice(0, 300)}`;
+}
+
+// Zalo gửi tin nhắn về (anh nhắn cho Zalo Bot) → liên kết tài khoản nhận thông báo
+async function zaloWebhook(request, env) {
+  if (request.headers.get("x-bot-api-secret-token") !== (await zaloSecret(env))) return new Response("Forbidden", { status: 403 });
+  const body = await request.json().catch(() => ({}));
+  const m = body.result?.message || body.message;
+  const chatId = m?.chat?.id;
+  if (!chatId) return new Response("ok");
+  const linked = await env.BOT_KV.get("zalo_chat_id");
+  if (!linked) {
+    await env.BOT_KV.put("zalo_chat_id", String(chatId));
+    await zaloSend(env, chatId, "✅ Đã liên kết! Từ giờ khi khách trên Fanpage H+ studio để lại số điện thoại hoặc cần người tư vấn, em sẽ báo anh ở đây.");
+  } else if (linked === String(chatId)) {
+    await zaloSend(env, chatId, "Tài khoản này đang nhận thông báo từ bot Fanpage H+ studio ạ.");
+  } else {
+    await zaloSend(env, chatId, "Bot này đã được liên kết với một tài khoản khác.");
+  }
+  return new Response("ok");
 }
 
 // ---------------------------------------------------------------------
