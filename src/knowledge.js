@@ -7,7 +7,7 @@
 export const BRAND = {
   name: "H+ STUDIO",
   hotline: "0866625868",
-  website: "www.Hplusdesign.vn",
+  website: "https://hplusdesign.vn",
   address: "Số 55, Nguyễn Đình Thi, Phường Tam Thắng, TPHCM",
   workingHours: "9h00 – 17h00, thứ 2 – thứ 7",
 };
@@ -58,10 +58,15 @@ export const SCRIPTS = [
     khi: "Khách hỏi về phong cách KHÔNG nằm trong danh sách phong cách thế mạnh (ví dụ tân cổ điển, cổ điển, Bắc Âu, Nhật...), hoặc một yêu cầu/dịch vụ mà KIẾN THỨC không có thông tin",
     tra_loi: "Dạ, về yêu cầu này thì kiến trúc sư bên em sẽ liên hệ lại để trao đổi thông tin kỹ hơn với anh/chị, để nắm rõ hơn về yêu cầu của mình ạ. Anh/chị vui lòng để lại số điện thoại để kiến trúc sư bên em liên hệ nhé.",
   },
+  {
+    khi: "Khách để lại số điện thoại",
+    tra_loi: "Dạ em cảm ơn anh/chị đã để lại thông tin ạ. Kiến trúc sư bên em sẽ liên hệ lại với anh/chị trong thời gian sớm nhất. Trong lúc chờ, anh/chị có thể tham khảo thêm các dự án của H+ studio tại website https://hplusdesign.vn hoặc gọi trực tiếp hotline 0866.625.868 ạ.",
+    ghi_chu: "Nếu khách đã cho biết tên/giới tính thì thay \"anh/chị\" bằng cách gọi phù hợp (ví dụ \"anh Nam\"), còn lại giữ nguyên câu. Luôn thêm dòng [[CHUYEN_NGUOI: khách để lại SĐT]] ở cuối.",
+  },
 ];
 
 function scriptsText() {
-  return SCRIPTS.map((x, i) => `${i + 1}. Khi: ${x.khi}\n   → Trả lời đúng nguyên văn: "${x.tra_loi}"`).join("\n");
+  return SCRIPTS.map((x, i) => `${i + 1}. Khi: ${x.khi}\n   → Trả lời đúng nguyên văn: "${x.tra_loi}"` + (x.ghi_chu ? `\n   (Lưu ý: ${x.ghi_chu})` : "")).join("\n");
 }
 
 export function buildSystemPrompt(nowText) {
@@ -110,7 +115,7 @@ ${scriptsText()}
 
 # Chuyển cho người thật
 Sau khi chuyển, bot sẽ IM LẶNG với khách này để người thật tiếp nhận. Vì vậy CHỈ thêm dòng cuối [[CHUYEN_NGUOI: lý do ngắn]] trong các trường hợp:
-- Khách đã để lại số điện thoại (cảm ơn khách, xưng tên nếu khách cho biết, báo kiến trúc sư sẽ gọi lại sớm)
+- Khách đã để lại số điện thoại (dùng kịch bản cố định tương ứng)
 - Khách muốn gặp/gọi trực tiếp hoặc đặt lịch khảo sát và đã cho cách liên hệ, hoặc khách yêu cầu nói chuyện với người thật
 - Khách phàn nàn, khiếu nại, hoặc đang là khách có công trình đang làm
 KHÔNG chuyển khi chỉ gặp câu hỏi chưa có trong KIẾN THỨC: khi đó dùng kịch bản cố định tương ứng (kiến trúc sư sẽ liên hệ, xin số điện thoại) — chờ khách để lại số mới chuyển.
