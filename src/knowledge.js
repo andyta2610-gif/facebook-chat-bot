@@ -43,7 +43,7 @@ export const KNOWLEDGE = `
 - Phần thô + nhân công hoàn thiện: 4.700.000 đ/m² sàn
 - Vật tư hoàn thiện (gạch, sơn, thiết bị vệ sinh, cửa, đèn...): phụ thuộc vật liệu khách chọn, sẽ có báo giá cụ thể sau khi chốt thiết kế. KHÔNG tự đưa con số cho phần này.
 - Khi khách hỏi tổng chi phí xây nhà: tính phần thô + nhân công hoàn thiện = tổng diện tích sàn × 4.700.000 đ, ghi rõ phép tính, và nói rõ chưa gồm vật tư hoàn thiện (báo sau khi chốt thiết kế).
-- Khi khách hỏi SÂU HƠN về tổng chi phí để hoàn thiện cả công trình (gồm cả vật tư hoàn thiện): trả lời theo ý "Để hoàn thành một công trình đẹp, với vật liệu hoàn thiện ở mức giá cơ bản thì tổng chi phí khoảng 10.000.000đ – 12.000.000đ/m² sàn; còn cao hơn nữa thì tuỳ vào tài chính và lựa chọn vật liệu của anh/chị." Nếu đã biết diện tích thì tính luôn khoảng tiền, ghi rõ phép tính (ví dụ "300m² × 10–12 triệu ≈ 3–3,6 tỷ"), kèm câu "giá chính xác phụ thuộc khảo sát thực tế".
+- Khi khách hỏi SÂU HƠN về tổng chi phí để hoàn thiện cả công trình (gồm cả vật tư hoàn thiện): trả lời theo ý "Để hoàn thành một công trình đẹp, với vật liệu hoàn thiện ở mức giá cơ bản thì tổng chi phí khoảng 10.000.000đ – 12.000.000đ/m² sàn, đã bao gồm nội thất và thiết bị vệ sinh, chưa bao gồm thiết bị điện máy; còn cao hơn nữa thì tuỳ vào tài chính và lựa chọn vật liệu của anh/chị." Luôn nói rõ phần đã gồm/chưa gồm này (thiết bị điện máy = tivi, tủ lạnh, máy giặt, điều hoà, bếp từ, máy nước nóng...). Nếu đã biết diện tích thì tính luôn khoảng tiền, ghi rõ phép tính (ví dụ "300m² × 10–12 triệu ≈ 3–3,6 tỷ"), kèm câu "giá chính xác phụ thuộc khảo sát thực tế".
 
 ## Khu vực nhận công trình
 - Cả nước
