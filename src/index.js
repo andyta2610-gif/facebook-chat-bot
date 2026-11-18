@@ -28,7 +28,7 @@ export default {
       return new Response(JSON.stringify(status, null, 2), { headers: { "content-type": "application/json; charset=utf-8" } });
     }
     if (url.pathname === "/telegram/setup") {
-      return new Response(await tgSetup(env, url.origin), { headers: { "content-type": "text/plain; charset=utf-8" } });
+      return new Response(await tgSetup(env), { headers: { "content-type": "text/plain; charset=utf-8" } });
     }
     if (url.pathname === "/telegram" && request.method === "POST") {
       return tgWebhook(request, env);
@@ -509,25 +509,31 @@ async function tgSecret(env) {
   return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 40);
 }
 
-// Mở /telegram/setup một lần để Telegram gửi tin nhắn về bot
-async function tgSetup(env, origin) {
+// Mở /telegram/setup sau khi đã bấm Start trong bot Telegram → tìm chat của anh và liên kết
+async function tgSetup(env) {
   if (!env.TELEGRAM_BOT_TOKEN) return "Chưa có TELEGRAM_BOT_TOKEN. Hãy thêm mã bot Telegram vào Cloudflare (Secret) rồi mở lại trang này.";
-  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setWebhook`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ url: `${origin}/telegram`, secret_token: await tgSecret(env), allowed_updates: ["message"] }),
-  });
-  const body = await res.text();
-  let ok = res.ok, name = "";
-  try { ok = ok && JSON.parse(body).ok; } catch {}
+  const api = (m) => `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${m}`;
+  let name = "";
   try {
-    const me = await (await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getMe`)).json();
+    const me = await (await fetch(api("getMe"))).json();
+    if (!me.ok) return `❌ Token Telegram không đúng: ${me.description || ""}`;
     name = me.result?.username ? `@${me.result.username}` : "";
-  } catch {}
+  } catch (e) { return `❌ Không gọi được Telegram: ${e?.message || e}`; }
+
   const linked = await env.BOT_KV.get("tg_chat_id");
-  return ok
-    ? `✅ Đã kết nối Telegram ${name}.\n${linked ? "Tài khoản Telegram nhận thông báo đã được liên kết." : `Bước cuối: mở Telegram, vào bot ${name} và bấm Start (hoặc nhắn /start) để liên kết.`}`
-    : `❌ Telegram báo lỗi: ${body.slice(0, 300)}`;
+  if (linked) return `✅ Telegram ${name} đã được liên kết. Thông báo khách mới sẽ gửi về đó.`;
+
+  await fetch(api("deleteWebhook"), { method: "POST" }).catch(() => {});
+  const up = await (await fetch(api("getUpdates"), {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ allowed_updates: ["message"] }),
+  })).json().catch(() => ({}));
+  const msgs = (up.result || []).map((u) => u.message).filter((m) => m?.chat?.type === "private");
+  if (!msgs.length) return `Gần xong rồi! Mở Telegram, vào bot ${name}, bấm Start (hoặc nhắn /start), rồi mở lại trang này.`;
+  const chat = msgs[0].chat;
+  await env.BOT_KV.put("tg_chat_id", String(chat.id));
+  await tgSend(env, chat.id, "✅ Đã liên kết! Từ giờ khi khách trên Fanpage H+ studio để lại số điện thoại hoặc cần người tư vấn, em sẽ báo anh ở đây.");
+  return `✅ Đã liên kết Telegram ${name} với tài khoản ${chat.first_name || ""} ${chat.last_name || ""}. Anh kiểm tra Telegram sẽ thấy tin xác nhận.`;
 }
 
 // Anh nhắn cho bot Telegram → liên kết tài khoản nhận thông báo (chỉ người đầu tiên)
