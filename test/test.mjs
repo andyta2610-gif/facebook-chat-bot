@@ -257,6 +257,16 @@ calls.length = 0;
 await post(msgEvent("U1", "#reset", "a3"));   // khách thường gõ #reset → coi như tin bình thường
 assert.ok(!sentTexts().some((t) => t.includes("Thử nghiệm")));
 
+// 10c. Khách yêu cầu xoá dữ liệu
+calls.length = 0;
+await post(msgEvent("U5", "Xoá dữ liệu của mình giúp nhé", "d1"));
+assert.ok(sentTexts()[0].includes("đã xoá toàn bộ lịch sử"));
+assert.equal(storageOf("U5").has("hist"), false);
+
+// 10d. Trang chính sách quyền riêng tư
+r = await worker.fetch(new Request("https://x/privacy"), env, {});
+assert.ok((await r.text()).includes("Chính sách quyền riêng tư"));
+
 // 11. Trang /status
 r = await worker.fetch(new Request("https://x/status"), env, {});
 const st = await r.json();

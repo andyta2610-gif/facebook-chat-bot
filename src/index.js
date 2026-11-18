@@ -1,4 +1,5 @@
 // H+ STUDIO — Messenger bot (Cloudflare Workers + Claude API)
+import { PRIVACY_HTML } from "./privacy.js";
 import { buildSystemPrompt, FALLBACK_REPLY, ATTACHMENT_REPLY, GREETING, GREETING_INTRO, FOLLOWUP_TEXT } from "./knowledge.js";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
@@ -25,6 +26,9 @@ export default {
         trace: raw ? JSON.parse(raw) : [],
       };
       return new Response(JSON.stringify(status, null, 2), { headers: { "content-type": "application/json; charset=utf-8" } });
+    }
+    if (url.pathname === "/privacy") {
+      return new Response(PRIVACY_HTML, { headers: { "content-type": "text/html; charset=utf-8" } });
     }
     if (url.pathname !== "/webhook") {
       return new Response("H+ STUDIO bot đang chạy.", { status: 200 });
@@ -111,6 +115,16 @@ async function handleEvent(event, env) {
   const images = atts.filter((a) => a.type === "image" && a.payload?.url).map((a) => a.payload.url).slice(0, 5);
   const otherFiles = atts.some((a) => a.type !== "image");
   if (!text && !atts.length) return;
+
+  // Khách yêu cầu xoá dữ liệu (cam kết trong Chính sách quyền riêng tư)
+  const norm = text.toLowerCase().normalize("NFC");
+  if (/^(xin\s+|vui lòng\s+|hãy\s+)?(xoá|xóa)\s+dữ\s+liệu|^delete my data/.test(norm)) {
+    await convo(env, psid).fetch("https://do/admin", { method: "POST", body: JSON.stringify({ cmd: "#reset" }) });
+    L(env, "data_deleted");
+    await sendText(env, psid, "Dạ, em đã xoá toàn bộ lịch sử trò chuyện của anh/chị trên hệ thống trợ lý tự động của H+ studio. Nếu cần hỗ trợ thêm, anh/chị gọi hotline 0866.625.868 ạ.");
+    await notify(env, "🗑 Một khách trên Fanpage vừa yêu cầu xoá dữ liệu. Bot đã xoá lịch sử trò chuyện; nếu có lưu thông tin khách ở nơi khác (sổ, Excel...) xin xoá giúp.");
+    return;
+  }
 
   // Lệnh thử nghiệm dành cho tài khoản quản trị (TEST_PSIDS): #reset, #bot
   const admins = String(env.TEST_PSIDS || "").split(",").map((x) => x.trim()).filter(Boolean);
