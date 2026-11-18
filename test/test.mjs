@@ -54,10 +54,18 @@ assert.equal(r.status, 403);
 r = await post(msgEvent("U1", "hi", "m0"), false);
 assert.equal(r.status, 401);
 
-// 3. Tin nhắn thường → bot trả lời
+// 3. Tin đầu tiên chỉ chào → chỉ gửi lời chào cố định
+const GREET = "Chào anh/chị, cám ơn anh/chị đã dành thời gian quan tâm đến các thiết kế của H+ studio, em có thể giúp gì được cho mình ạ?";
+claudeReply = "[[KHONG_TRA_LOI]]";
 r = await post(msgEvent("U1", "Chào shop", "m1"));
 assert.equal(r.status, 200);
-assert.deepEqual(sentTexts(), ["Dạ chào anh/chị, em có thể giúp gì ạ?"]);
+assert.deepEqual(sentTexts(), [GREET]);
+// 3b. Khách mới hỏi cụ thể ngay → lời chào + câu trả lời
+calls.length = 0;
+claudeReply = "Dạ bên em nhận thiết kế căn hộ ạ.";
+await post(msgEvent("U9", "Tôi cần thiết kế căn hộ", "m90"));
+assert.deepEqual(sentTexts(), [GREET, "Dạ bên em nhận thiết kế căn hộ ạ."]);
+claudeReply = "Dạ chào anh/chị, em có thể giúp gì ạ?";
 
 // 4. Meta gửi trùng → không trả lời lần 2
 calls.length = 0;
@@ -106,7 +114,11 @@ globalThis.fetch = async (url, init) => {
 };
 calls.length = 0;
 await post(msgEvent("U3", "Báo giá giúp", "m6"));
-assert.ok(sentTexts()[0].includes("0866625868"));
+assert.deepEqual(sentTexts(), [GREET], "khách mới + lỗi AI: vẫn có lời chào");
+calls.length = 0;
+kv.delete("handoff:U1");
+await post(msgEvent("U1", "Báo giá giúp", "m7"));
+assert.ok(sentTexts()[0].includes("0866625868"), "khách cũ + lỗi AI: câu dự phòng có hotline");
 assert.equal(kv.has("handoff:U3"), true);
 
 console.log("✅ Tất cả test đều đạt");

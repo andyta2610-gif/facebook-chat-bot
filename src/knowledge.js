@@ -84,6 +84,9 @@ Dòng [[CHUYEN_NGUOI ...]] khách sẽ không nhìn thấy.
 ${KNOWLEDGE}`;
 }
 
+// Lời chào cố định gửi cho tin nhắn đầu tiên của khách
+export const GREETING = "Chào anh/chị, cám ơn anh/chị đã dành thời gian quan tâm đến các thiết kế của H+ studio, em có thể giúp gì được cho mình ạ?";
+
 export const FALLBACK_REPLY = `Dạ ${BRAND.name} đã nhận được tin nhắn của anh/chị. Tư vấn viên sẽ phản hồi sớm nhất ạ. Cần gấp anh/chị gọi hotline ${BRAND.hotline} nhé.`;
 
 export const ATTACHMENT_REPLY = `Dạ em đã nhận được hình/file anh/chị gửi. Em chuyển cho kiến trúc sư xem và phản hồi anh/chị sớm ạ. Anh/chị cho em xin số điện thoại để tiện liên hệ nhé.`;

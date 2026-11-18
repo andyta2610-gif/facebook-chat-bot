@@ -1,10 +1,11 @@
 // H+ STUDIO — Messenger bot (Cloudflare Workers + Claude API)
-import { buildSystemPrompt, FALLBACK_REPLY, ATTACHMENT_REPLY } from "./knowledge.js";
+import { buildSystemPrompt, FALLBACK_REPLY, ATTACHMENT_REPLY, GREETING } from "./knowledge.js";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 const HISTORY_LIMIT = 20;                 // số tin nhắn gần nhất gửi kèm cho Claude
 const HISTORY_TTL = 60 * 60 * 24 * 14;    // giữ lịch sử hội thoại 14 ngày
 const AUTO_REPLY_WINDOW_MS = 15000;       // tin Page gửi trong 15 giây sau tin khách = tự động, không tính là nhân viên
+const SKIP_MARKER = /\[\[KHONG_TRA_LOI\]\]/i;
 const HANDOFF_MARKER = /\[\[CHUYEN_NGUOI:?\s*([^\]]*)\]\]/i;
 
 export default {
@@ -134,24 +135,33 @@ async function handleEvent(event, env) {
   await senderAction(env, psid, "typing_on");
 
   const history = await loadHistory(env, psid);
+  const isFirst = history.length === 0;
   history.push({ role: "user", content: text });
 
-  let reply, handoffReason = null;
+  // Tin đầu tiên của khách: luôn gửi lời chào cố định trước
+  if (isFirst) {
+    await sendText(env, psid, GREETING);
+    L(env, "greeting");
+  }
+
+  let reply = null, handoffReason = null;
   try {
-    const raw = await askClaude(env, history);
+    const raw = await askClaude(env, history, isFirst);
     L(env, "claude_ok");
     const m = raw.match(HANDOFF_MARKER);
     if (m) handoffReason = (m[1] || "cần tư vấn viên").trim();
-    reply = raw.replace(HANDOFF_MARKER, "").trim() || FALLBACK_REPLY;
+    if (SKIP_MARKER.test(raw)) reply = null;   // khách chỉ chào hỏi → lời chào là đủ
+    else reply = raw.replace(HANDOFF_MARKER, "").trim() || (isFirst ? null : FALLBACK_REPLY);
   } catch (e) {
     console.error("claude error", e);
     L(env, "claude_error", e?.message);
-    reply = FALLBACK_REPLY;
+    reply = isFirst ? null : FALLBACK_REPLY;
     handoffReason = "Bot gặp lỗi khi gọi AI";
   }
 
-  await sendText(env, psid, reply);
-  history.push({ role: "assistant", content: reply });
+  if (reply) await sendText(env, psid, reply);
+  const said = [isFirst ? GREETING : null, reply].filter(Boolean).join("\n");
+  if (said) history.push({ role: "assistant", content: said });
   await saveHistory(env, psid, history);
 
   if (handoffReason) {
@@ -164,7 +174,7 @@ async function handleEvent(event, env) {
 }
 
 // ---------------------------------------------------------------------
-async function askClaude(env, history) {
+async function askClaude(env, history, isFirst = false) {
   const now = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -176,7 +186,7 @@ async function askClaude(env, history) {
     body: JSON.stringify({
       model: env.CLAUDE_MODEL || "claude-sonnet-5-5",
       max_tokens: 600,
-      system: buildSystemPrompt(now),
+      system: buildSystemPrompt(now) + (isFirst ? FIRST_MESSAGE_NOTE : ""),
       messages: normalize(history),
     }),
   });
@@ -184,6 +194,13 @@ async function askClaude(env, history) {
   const data = await res.json();
   return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
 }
+
+const FIRST_MESSAGE_NOTE = `
+
+# LƯU Ý CHO TIN NÀY
+Đây là tin đầu tiên của khách. Hệ thống ĐÃ tự gửi lời chào: "${GREETING}"
+- Nếu tin của khách chỉ là chào hỏi chung chung (ví dụ "chào shop", "hi", "alo", "tư vấn giúp"), chỉ trả về đúng [[KHONG_TRA_LOI]] và không viết gì khác.
+- Nếu khách đã hỏi hoặc nêu nhu cầu cụ thể, KHÔNG chào lại, trả lời thẳng vào nội dung khách hỏi.`;
 
 // Claude yêu cầu tin nhắn xen kẽ user/assistant và bắt đầu bằng user
 function normalize(history) {
