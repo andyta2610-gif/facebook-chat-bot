@@ -10,6 +10,21 @@ const HANDOFF_MARKER = /\[\[CHUYEN_NGUOI:?\s*([^\]]*)\]\]/i;
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
+    if (url.pathname === "/status") {
+      // Nhật ký kỹ thuật gần nhất (không chứa nội dung tin nhắn hay khoá bí mật)
+      const raw = await env.BOT_KV.get("trace");
+      const status = {
+        now: new Date().toISOString(),
+        secrets: {
+          ANTHROPIC_API_KEY: !!env.ANTHROPIC_API_KEY,
+          PAGE_ACCESS_TOKEN: !!env.PAGE_ACCESS_TOKEN,
+          APP_SECRET: !!env.APP_SECRET,
+          VERIFY_TOKEN: !!env.VERIFY_TOKEN,
+        },
+        trace: raw ? JSON.parse(raw) : [],
+      };
+      return new Response(JSON.stringify(status, null, 2), { headers: { "content-type": "application/json; charset=utf-8" } });
+    }
     if (url.pathname !== "/webhook") {
       return new Response("H+ STUDIO bot đang chạy.", { status: 200 });
     }
@@ -28,7 +43,10 @@ export default {
     if (request.method === "POST") {
       const raw = await request.text();
       const ok = await verifySignature(raw, request.headers.get("x-hub-signature-256"), env.APP_SECRET);
-      if (!ok) return new Response("Bad signature", { status: 401 });
+      if (!ok) {
+        ctx.waitUntil(saveTrace(env, [{ t: Date.now(), s: "bad_signature" }]));
+        return new Response("Bad signature", { status: 401 });
+      }
 
       let body;
       try { body = JSON.parse(raw); } catch { return new Response("Bad JSON", { status: 400 }); }
@@ -47,11 +65,17 @@ export default {
 async function processEntries(entries, env) {
   for (const entry of entries) {
     for (const event of entry.messaging || []) {
+      const tr = [];
+      const log = (stage, detail) => tr.push({ t: Date.now(), s: stage, ...(detail ? { d: String(detail).slice(0, 300) } : {}) });
+      env.__log = log;
+      log("event", event.message?.is_echo ? `echo app=${event.message.app_id}` : `from=..${String(event.sender?.id || "").slice(-4)}`);
       try {
         await handleEvent(event, env);
       } catch (e) {
         console.error("event error", e);
+        log("error", e?.message || e);
       }
+      await saveTrace(env, tr).catch(() => {});
     }
   }
 }
@@ -73,7 +97,8 @@ async function handleEvent(event, env) {
     }
     // Tin trả lời tự động của Meta (gửi vài giây sau tin khách) không phải người thật → bỏ qua
     const lastIn = Number(await env.BOT_KV.get(`lastin:${customerId}`) || 0);
-    if (Date.now() - lastIn < AUTO_REPLY_WINDOW_MS) return;
+    if (Date.now() - lastIn < AUTO_REPLY_WINDOW_MS) { L(env, "echo_auto_ignored"); return; }
+    L(env, "echo_human_handoff");
     await setHandoff(env, customerId);
     return;
   }
@@ -85,12 +110,12 @@ async function handleEvent(event, env) {
   // Chống xử lý trùng khi Meta gửi lại
   if (msg.mid) {
     const seenKey = `mid:${msg.mid}`;
-    if (await env.BOT_KV.get(seenKey)) return;
+    if (await env.BOT_KV.get(seenKey)) { L(env, "skip_duplicate"); return; }
     await env.BOT_KV.put(seenKey, "1", { expirationTtl: 60 * 60 * 24 });
   }
 
   // Đang có người thật phụ trách → bot im lặng
-  if (await env.BOT_KV.get(`handoff:${psid}`)) return;
+  if (await env.BOT_KV.get(`handoff:${psid}`)) { L(env, "skip_handoff"); return; }
 
   const text = (msg.text || "").trim();
   if (!text) {
@@ -114,11 +139,13 @@ async function handleEvent(event, env) {
   let reply, handoffReason = null;
   try {
     const raw = await askClaude(env, history);
+    L(env, "claude_ok");
     const m = raw.match(HANDOFF_MARKER);
     if (m) handoffReason = (m[1] || "cần tư vấn viên").trim();
     reply = raw.replace(HANDOFF_MARKER, "").trim() || FALLBACK_REPLY;
   } catch (e) {
     console.error("claude error", e);
+    L(env, "claude_error", e?.message);
     reply = FALLBACK_REPLY;
     handoffReason = "Bot gặp lỗi khi gọi AI";
   }
@@ -128,6 +155,7 @@ async function handleEvent(event, env) {
   await saveHistory(env, psid, history);
 
   if (handoffReason) {
+    L(env, "handoff", handoffReason);
     await setHandoff(env, psid);
     await notify(env,
       `🔔 Khách Fanpage cần tư vấn viên\nLý do: ${handoffReason}\nTin cuối: "${text.slice(0, 300)}"\n` +
@@ -199,7 +227,11 @@ async function sendText(env, psid, text) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ recipient: { id: psid }, messaging_type: "RESPONSE", message: { text: part } }),
     });
-    if (!res.ok) console.error("send error", res.status, await res.text());
+    if (!res.ok) {
+      const err = await res.text();
+      console.error("send error", res.status, err);
+      L(env, "send_error", `${res.status} ${err}`);
+    } else L(env, "sent");
   }
 }
 
@@ -223,6 +255,16 @@ function splitText(text, max) {
   }
   if (rest) parts.push(rest);
   return parts;
+}
+
+function L(env, stage, detail) { try { env.__log && env.__log(stage, detail); } catch {} }
+
+async function saveTrace(env, items) {
+  if (!items.length) return;
+  let arr = [];
+  try { arr = JSON.parse((await env.BOT_KV.get("trace")) || "[]"); } catch {}
+  arr.push(items);
+  await env.BOT_KV.put("trace", JSON.stringify(arr.slice(-15)), { expirationTtl: 60 * 60 * 24 * 3 });
 }
 
 // Báo cho anh qua Telegram (không bắt buộc)

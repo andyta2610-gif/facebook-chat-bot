@@ -15,3 +15,6 @@ id = "4643ee4e6ad54cc594443bfbbf809720"   # lấy từ lệnh: npx wrangler kv n
 # Các khoá bí mật KHÔNG ghi ở đây, nhập bằng lệnh `npx wrangler secret put ...`:
 #   ANTHROPIC_API_KEY, PAGE_ACCESS_TOKEN, APP_SECRET, VERIFY_TOKEN
 #   (tuỳ chọn) TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+
+[observability]
+enabled = true
