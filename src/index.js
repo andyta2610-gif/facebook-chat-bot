@@ -354,14 +354,24 @@ async function askClaude(env, history, isFirst = false, images = []) {
     },
     body: JSON.stringify({
       model: env.CLAUDE_MODEL || "claude-sonnet-5-5",
-      max_tokens: 1000,
+      max_tokens: 2500,
       system: buildSystemPrompt(now) + (isFirst ? FIRST_MESSAGE_NOTE : ""),
       messages,
     }),
   });
   if (!res.ok) throw new Error(`Claude API ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  return (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+  let text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+  // Lỡ bị cắt giữa chừng → bỏ phần dở dang, giữ đến câu/dòng hoàn chỉnh cuối cùng
+  if (data.stop_reason === "max_tokens") text = trimToComplete(text);
+  return text;
+}
+
+function trimToComplete(text) {
+  const lastLine = text.lastIndexOf("\n");
+  const lastSentence = Math.max(text.lastIndexOf(". "), text.lastIndexOf("? "), text.lastIndexOf("! "), text.lastIndexOf("ạ."));
+  const cut = Math.max(lastLine, lastSentence + 1);
+  return cut > text.length * 0.5 ? text.slice(0, cut).trim() : text;
 }
 
 const FIRST_MESSAGE_NOTE = `
@@ -457,4 +467,4 @@ async function verifySignature(raw, header, secret) {
   return diff === 0;
 }
 
-export const _test = { normalize, splitText, verifySignature };
+export const _test = { normalize, splitText, verifySignature, trimToComplete };
