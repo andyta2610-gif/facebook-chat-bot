@@ -231,6 +231,10 @@ claudeReply = "Dạ vâng.";
 await post(msgEvent("U6", "Mình muốn hỏi chút", "f4"));
 assert.equal(storageOf("U6").has("followUpAt"), false, "khách nhắn lại thì huỷ nhắc");
 
+// 9g. Tin chào mẫu của quảng cáo (Page gửi trước khi khách nhắn) → không tắt bot
+await post(echo("U8", 263902037430900, "Chào bạn! Chúng tôi có thể giúp gì?", "ad1"));
+assert.equal(storageOf("U8").has("handoffUntil"), false, "tin chào quảng cáo không tắt bot");
+
 // 10. Lỗi Claude: khách mới vẫn có lời chào; khách cũ nhận câu dự phòng có hotline
 claudeFails = true;
 calls.length = 0;

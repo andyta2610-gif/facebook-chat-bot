@@ -225,8 +225,12 @@ export class Conversation {
     if (url.pathname === "/echo") {
       const text = String(body.text || "").trim().toLowerCase();
       if (text === "#bot") { await st.delete("handoffUntil"); return new Response("bot_resumed"); }
-      // Tin tự động của Meta (vài giây sau tin khách) không phải người thật
-      if (now - ((await st.get("lastIn")) || 0) < AUTO_REPLY_WINDOW_MS) return new Response("echo_auto_ignored");
+      // Tin tự động của Meta không phải người thật:
+      // - tin chào mẫu của quảng cáo (gửi khi khách chưa nhắn gì)
+      // - tin trả lời tự động (vài giây sau tin khách)
+      const lastIn = (await st.get("lastIn")) || 0;
+      if (!lastIn) return new Response("echo_before_customer_ignored");
+      if (now - lastIn < AUTO_REPLY_WINDOW_MS) return new Response("echo_auto_ignored");
       await this.setHandoff();
       await st.delete(["pending", "firstAt"]);
       return new Response("echo_human_handoff");
