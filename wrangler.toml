@@ -1,6 +1,7 @@
 name = "facebook-chat-bot"
 main = "src/index.js"
 compatibility_date = "2026-11-01"
+keep_vars = true   # giữ các biến anh nhập trên Cloudflare, không bị xoá khi cập nhật mã
 
 [vars]
 CLAUDE_MODEL = "claude-sonnet-5-5"
