@@ -192,6 +192,10 @@ await post(msgEvent("U1", "😍😍 ", "m8e"));
 await post(msgEvent("U1", ":)", "m8f"));
 assert.equal(storageOf("U1").has("pending"), false, "không xếp hàng trả lời");
 assert.equal(calls.length, 0, "không gửi gì, kể cả dấu đã xem");
+// số điện thoại / chữ số KHÔNG bị coi là icon
+const { _test } = await import("../src/index.js");
+for (const t of ["0866625868", "0909 123 456", "70", "2027", "#reset", "ok"]) assert.equal(_test.isOnlyEmoji(t), false, t);
+for (const t of ["👍", "😍😍 ", ":)", "❤️", "👍🏻", "<3", "^^"]) assert.equal(_test.isOnlyEmoji(t), true, t);
 // tin có chữ kèm icon vẫn trả lời bình thường
 claudeReply = "Dạ vâng ạ.";
 await post(msgEvent("U1", "Ok bạn 👍", "m8g"));

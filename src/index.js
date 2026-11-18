@@ -139,8 +139,9 @@ async function handleEvent(event, env) {
 
 function isOnlyEmoji(t) {
   if (!t) return false;
-  const stripped = t.replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Emoji_Component}\u200d\ufe0f\s]/gu, "")
-    .replace(/[:;=8xX][-']?[)(DPpOo3]|<3|[\^]_?[\^]/g, "");
+  // Chỉ xoá ký tự hình ảnh thật sự; chữ số, chữ cái giữ nguyên (số điện thoại không bị coi là icon)
+  const stripped = t.replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\p{Regional_Indicator}\u200d\ufe0f\u20e3\s]/gu, "")
+    .replace(/[:;=][-']?[)(DPpOo3]|<3|\^_?\^/g, "");
   return stripped.length === 0;
 }
 
@@ -467,4 +468,4 @@ async function verifySignature(raw, header, secret) {
   return diff === 0;
 }
 
-export const _test = { normalize, splitText, verifySignature, trimToComplete };
+export const _test = { normalize, splitText, verifySignature, trimToComplete, isOnlyEmoji };
