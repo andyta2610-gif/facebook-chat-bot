@@ -4,6 +4,7 @@ import { buildSystemPrompt, FALLBACK_REPLY, ATTACHMENT_REPLY } from "./knowledge
 const GRAPH = "https://graph.facebook.com/v21.0";
 const HISTORY_LIMIT = 20;                 // số tin nhắn gần nhất gửi kèm cho Claude
 const HISTORY_TTL = 60 * 60 * 24 * 14;    // giữ lịch sử hội thoại 14 ngày
+const AUTO_REPLY_WINDOW_MS = 15000;       // tin Page gửi trong 15 giây sau tin khách = tự động, không tính là nhân viên
 const HANDOFF_MARKER = /\[\[CHUYEN_NGUOI:?\s*([^\]]*)\]\]/i;
 
 export default {
@@ -68,14 +69,18 @@ async function handleEvent(event, env) {
     const text = (msg.text || "").trim().toLowerCase();
     if (text === "#bot") {
       await env.BOT_KV.delete(`handoff:${customerId}`);
-    } else {
-      await setHandoff(env, customerId);
+      return;
     }
+    // Tin trả lời tự động của Meta (gửi vài giây sau tin khách) không phải người thật → bỏ qua
+    const lastIn = Number(await env.BOT_KV.get(`lastin:${customerId}`) || 0);
+    if (Date.now() - lastIn < AUTO_REPLY_WINDOW_MS) return;
+    await setHandoff(env, customerId);
     return;
   }
 
   const psid = event.sender?.id;
   if (!psid) return;
+  await env.BOT_KV.put(`lastin:${psid}`, String(Date.now()), { expirationTtl: 3600 });
 
   // Chống xử lý trùng khi Meta gửi lại
   if (msg.mid) {

@@ -90,6 +90,11 @@ assert.deepEqual(sentTexts(), ["Dạ em đây ạ."]);
 // 8. Nhân viên tự trả lời tay → bot dừng với khách đó; echo của chính bot thì không
 await post({ object: "page", entry: [{ messaging: [{ sender: { id: "PAGE" }, recipient: { id: "U2" }, message: { is_echo: true, app_id: 111, text: "bot msg", mid: "e2" } }] }] });
 assert.equal(kv.has("handoff:U2"), false);
+// 8b. Tin tự động của Meta ngay sau tin khách → không tắt bot
+await post(msgEvent("U2", "Chào", "m20"));
+await post({ object: "page", entry: [{ messaging: [{ sender: { id: "PAGE" }, recipient: { id: "U2" }, message: { is_echo: true, app_id: 263902037430900, text: "Cảm ơn bạn đã nhắn tin", mid: "e20" } }] }] });
+assert.equal(kv.has("handoff:U2"), false, "tin tự động của Meta không được tắt bot");
+kv.set("lastin:U2", String(Date.now() - 60000)); // giả lập 1 phút sau
 await post({ object: "page", entry: [{ messaging: [{ sender: { id: "PAGE" }, recipient: { id: "U2" }, message: { is_echo: true, app_id: 263902037430900, text: "Chào anh, em là KTS", mid: "e3" } }] }] });
 assert.equal(kv.has("handoff:U2"), true);
 
