@@ -81,7 +81,7 @@ const msgEvent = (psid, text, mid) => ({ object: "page", entry: [{ messaging: [{
 const echo = (psid, app_id, text, mid) => ({ object: "page", entry: [{ messaging: [{ sender: { id: "PAGE" }, recipient: { id: psid }, message: { is_echo: true, app_id, text, mid } }] }] });
 const sentTexts = () => calls.filter((c) => c.url.includes("graph.facebook") && c.body?.message?.text).map((c) => c.body.message.text);
 const claudeCalls = () => calls.filter((c) => c.url.includes("anthropic"));
-const GREET = "Chào anh/chị, cám ơn anh/chị đã dành thời gian quan tâm đến các thiết kế của H+ studio, em có thể giúp gì được cho mình ạ?";
+const GREET = (await import("../src/knowledge.js")).GREETING;
 
 // 1. Xác minh webhook
 let r = await worker.fetch(new Request("https://x/webhook?hub.mode=subscribe&hub.verify_token=vt&hub.challenge=abc"), env, {});

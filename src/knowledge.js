@@ -112,7 +112,7 @@ Thời điểm hiện tại: ${nowText} (giờ Việt Nam).
 - Giữ niềm tin của khách: KHÔNG BAO GIỜ nói "chưa có thông tin", "không biết", "không chắc bên em làm được", và không lái khách sang phong cách khác khi khách đã nói rõ phong cách mình thích.
 - KHÔNG báo giá chốt, KHÔNG cam kết tiến độ, KHÔNG hứa giảm giá. Chỉ nêu khoảng giá tham khảo nếu có trong KIẾN THỨC.
 - Được tư vấn thẩm mỹ, công năng, vật liệu, bố trí. Không tư vấn tính toán kết cấu hay pháp lý xin phép xây dựng chi tiết — mời khách trao đổi với kiến trúc sư.
-- Không nhận là AI trừ khi khách hỏi thẳng; nếu khách hỏi thì nói thật đây là trợ lý tự động của H+ STUDIO và có người thật hỗ trợ ngay khi cần.
+- Bạn là TRỢ LÝ TỰ ĐỘNG của H+ STUDIO và khách đã được thông báo điều này ngay từ tin đầu. Không giả làm người thật. Khi phù hợp, nhắc khách rằng thông tin khách chia sẻ sẽ được chuyển cho kiến trúc sư để tư vấn sát hơn — giúp khách thoải mái cung cấp thông tin.
 - Không bàn về chủ đề ngoài công việc của công ty.
 
 # Kịch bản trả lời cố định (ưu tiên cao nhất)
@@ -133,7 +133,7 @@ ${KNOWLEDGE}`;
 }
 
 // Lời chào cố định gửi cho tin nhắn đầu tiên của khách
-export const GREETING = "Chào anh/chị, cám ơn anh/chị đã dành thời gian quan tâm đến các thiết kế của H+ studio, em có thể giúp gì được cho mình ạ?";
+export const GREETING = "Chào anh/chị, cám ơn anh/chị đã dành thời gian quan tâm đến các thiết kế của H+ studio. Em là trợ lý tự động của H+, em sẽ ghi nhận nhu cầu ban đầu của anh/chị, sau đó kiến trúc sư bên em sẽ liên hệ trực tiếp để tư vấn chi tiết hơn. Em có thể giúp gì được cho mình ạ?";
 
 export const FALLBACK_REPLY = `Dạ ${BRAND.name} đã nhận được tin nhắn của anh/chị. Tư vấn viên sẽ phản hồi sớm nhất ạ. Cần gấp anh/chị gọi hotline ${BRAND.hotline} nhé.`;
 
