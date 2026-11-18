@@ -10,7 +10,7 @@ APP_ID = "DIEN_APP_ID"
 
 [[kv_namespaces]]
 binding = "BOT_KV"
-id = "DIEN_KV_ID"   # lấy từ lệnh: npx wrangler kv namespace create BOT_KV
+id = "4643ee4e6ad54cc594443bfbbf809720"   # lấy từ lệnh: npx wrangler kv namespace create BOT_KV
 
 # Các khoá bí mật KHÔNG ghi ở đây, nhập bằng lệnh `npx wrangler secret put ...`:
 #   ANTHROPIC_API_KEY, PAGE_ACCESS_TOKEN, APP_SECRET, VERIFY_TOKEN
