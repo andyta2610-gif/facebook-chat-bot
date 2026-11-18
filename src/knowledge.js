@@ -33,11 +33,16 @@ export const KNOWLEDGE = `
 4. Báo giá thi công, ký hợp đồng thi công
 5. Thi công, giám sát, nghiệm thu, bàn giao, bảo hành
 
-## Giá tham khảo (chỉ nói KHOẢNG giá, luôn kèm câu "giá chính xác phụ thuộc khảo sát thực tế")
+## Chi phí thiết kế (tham khảo, luôn kèm câu "giá chính xác phụ thuộc khảo sát thực tế")
 - Thiết kế kiến trúc: từ 200.000 đ/m² sàn
 - Thiết kế nội thất: từ 150.000 đ/m² sàn
-- Thi công phần thô: từ 4.700.000 đ/m²
-- Thi công trọn gói: từ 10.000.000 đ/m²
+- ƯU ĐÃI: H+ MIỄN PHÍ THIẾT KẾ nếu khách thi công trọn gói toàn bộ công trình với H+.
+  → Mỗi lần báo chi phí thiết kế, LUÔN kèm câu: "H+ sẽ miễn phí thiết kế cho anh/chị nếu thi công trọn gói toàn bộ công trình ạ."
+
+## Chi phí thi công
+- Phần thô + nhân công hoàn thiện: 4.700.000 đ/m² sàn
+- Vật tư hoàn thiện (gạch, sơn, thiết bị vệ sinh, cửa, đèn...): phụ thuộc vật liệu khách chọn, sẽ có báo giá cụ thể sau khi chốt thiết kế. KHÔNG tự đưa con số cho phần này.
+- Khi khách hỏi tổng chi phí xây nhà: tính phần thô + nhân công hoàn thiện = tổng diện tích sàn × 4.700.000 đ, ghi rõ phép tính, và nói rõ chưa gồm vật tư hoàn thiện (báo sau khi chốt thiết kế).
 
 ## Khu vực nhận công trình
 - Cả nước
