@@ -184,6 +184,22 @@ await post({ object: "page", entry: [{ messaging: [{ sender: { id: "U1" }, recip
 await fireAlarm("U1");
 assert.deepEqual(sentTexts(), ["Dạ đây là phong cách Indochine ạ."]);
 
+// 9c. Bấm 👍 → không coi là ảnh; Claude nhận "[Khách bấm Like]"
+calls.length = 0;
+claudeReply = "Dạ, anh/chị đang dự định làm nhà phố, biệt thự hay căn hộ ạ?";
+await post({ object: "page", entry: [{ messaging: [{ sender: { id: "U1" }, recipient: { id: "PAGE" }, message: { mid: "m8c", sticker_id: 369239263222822, attachments: [{ type: "image", payload: { url: "https://cdn.fb/like.png", sticker_id: 369239263222822 } }] } }] }] });
+await fireAlarm("U1");
+const likeMsg = claudeCalls().at(-1).body.messages.at(-1);
+assert.equal(typeof likeMsg.content, "string", "không gửi ảnh sticker cho Claude");
+assert.ok(likeMsg.content.includes("Khách bấm Like") && !likeMsg.content.includes("ảnh]"));
+assert.ok(!calls.some((c) => c.url.includes("telegram") && c.body.text.includes("hình/file")), "không báo có hình");
+// 9d. Like khi không cần hỏi gì thêm → bot im
+calls.length = 0;
+claudeReply = "[[KHONG_TRA_LOI]]";
+await post({ object: "page", entry: [{ messaging: [{ sender: { id: "U1" }, recipient: { id: "PAGE" }, message: { mid: "m8d", sticker_id: 369239263222822, attachments: [{ type: "image", payload: { url: "https://cdn.fb/like.png", sticker_id: 369239263222822 } }] } }] }] });
+await fireAlarm("U1");
+assert.equal(sentTexts().length, 0);
+
 // 10. Lỗi Claude: khách mới vẫn có lời chào; khách cũ nhận câu dự phòng có hotline
 claudeFails = true;
 calls.length = 0;

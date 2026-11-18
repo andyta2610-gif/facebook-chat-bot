@@ -5,6 +5,7 @@ const GRAPH = "https://graph.facebook.com/v21.0";
 const HISTORY_LIMIT = 20;                 // số tin nhắn gần nhất gửi kèm cho Claude
 const HISTORY_TTL = 60 * 60 * 24 * 14;    // giữ lịch sử hội thoại 14 ngày
 const AUTO_REPLY_WINDOW_MS = 15000;       // tin Page gửi trong 15 giây sau tin khách = tự động, không tính là nhân viên
+const LIKE_STICKERS = ["369239263222822", "369239343222814", "369239383222810"]; // nút 👍 các cỡ
 const SKIP_MARKER = /\[\[KHONG_TRA_LOI\]\]/i;
 const HANDOFF_MARKER = /\[\[CHUYEN_NGUOI:?\s*([^\]]*)\]\]/i;
 
@@ -100,8 +101,15 @@ async function handleEvent(event, env) {
   const psid = event.sender?.id;
   if (!psid) return;
 
-  const text = (msg.text || "").trim();
-  const atts = msg.attachments || [];
+  let text = (msg.text || "").trim();
+  // Sticker (kể cả nút 👍 Like) không phải ảnh thật
+  const isSticker = (a) => !!(a.payload?.sticker_id);
+  const stickerIds = [msg.sticker_id, ...(msg.attachments || []).map((a) => a.payload?.sticker_id)].filter(Boolean).map(String);
+  const atts = (msg.attachments || []).filter((a) => !isSticker(a) && a.type !== "fallback");
+  if (stickerIds.length) {
+    const like = stickerIds.some((id) => LIKE_STICKERS.includes(id));
+    text = [text, like ? "👍 [Khách bấm Like]" : "[Khách gửi một sticker cảm xúc]"].filter(Boolean).join("\n");
+  }
   const images = atts.filter((a) => a.type === "image" && a.payload?.url).map((a) => a.payload.url).slice(0, 5);
   const otherFiles = atts.some((a) => a.type !== "image");
   if (!text && !atts.length) return;
