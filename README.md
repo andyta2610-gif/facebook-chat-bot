@@ -62,11 +62,11 @@ npx wrangler secret put VERIFY_TOKEN
 ```
 npm run deploy
 ```
-Lệnh này in ra địa chỉ bot, dạng `https://hplus-messenger-bot.<tên>.workers.dev`.
+Lệnh này in ra địa chỉ bot, dạng `https://facebook-chat-bot.<tên>.workers.dev`.
 
 ### Bước 6 — Nối webhook với Fanpage
 Trong app Meta, vào **Messenger → Webhooks**:
-- Callback URL: `https://hplus-messenger-bot.<tên>.workers.dev/webhook`
+- Callback URL: `https://facebook-chat-bot.<tên>.workers.dev/webhook`
 - Verify token: chuỗi anh đặt ở Bước 4
 - Bấm **Verify and save**
 - Ở dòng Fanpage H+, bấm **Add subscriptions** và tick: `messages`, `message_echoes`
