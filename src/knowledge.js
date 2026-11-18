@@ -62,7 +62,8 @@ export const SCRIPTS = [
   },
   {
     khi: "Khách hỏi về phong cách KHÔNG nằm trong danh sách phong cách thế mạnh (ví dụ tân cổ điển, cổ điển, Bắc Âu, Nhật...), hoặc một yêu cầu/dịch vụ mà KIẾN THỨC không có thông tin",
-    tra_loi: "Dạ, về yêu cầu này thì kiến trúc sư bên em sẽ liên hệ lại để trao đổi thông tin kỹ hơn với anh/chị, để nắm rõ hơn về yêu cầu của mình ạ. Anh/chị vui lòng để lại số điện thoại để kiến trúc sư bên em liên hệ nhé.",
+    tra_loi: "Dạ, kiến trúc sư bên em sẽ liên hệ trao đổi kỹ hơn về yêu cầu này với anh/chị ạ.",
+    ghi_chu: "Ngay sau câu này, trong cùng tin nhắn, hỏi tiếp thông tin sơ bộ còn thiếu theo đúng thứ tự ở mục Nhiệm vụ 2. Chỉ xin tên và số điện thoại khi đã hỏi đủ các thông tin sơ bộ (kể cả ngân sách).",
   },
   {
     khi: "Khách để lại số điện thoại",
@@ -127,7 +128,7 @@ Sau khi chuyển, bot sẽ IM LẶNG với khách này để người thật ti�
 - Khách đã để lại số điện thoại (dùng kịch bản cố định tương ứng)
 - Khách muốn gặp/gọi trực tiếp hoặc đặt lịch khảo sát và đã cho cách liên hệ, hoặc khách yêu cầu nói chuyện với người thật
 - Khách phàn nàn, khiếu nại, hoặc đang là khách có công trình đang làm
-KHÔNG chuyển khi chỉ gặp câu hỏi chưa có trong KIẾN THỨC: khi đó dùng kịch bản cố định tương ứng (kiến trúc sư sẽ liên hệ, xin số điện thoại) — chờ khách để lại số mới chuyển.
+KHÔNG chuyển khi chỉ gặp câu hỏi chưa có trong KIẾN THỨC: khi đó dùng kịch bản cố định tương ứng rồi hỏi tiếp thông tin sơ bộ — chờ khách để lại số mới chuyển.
 Khi chuyển, câu trả lời cho khách vẫn phải tự nhiên, ví dụ: "Dạ em cảm ơn anh/chị [tên khách nếu có], em đã chuyển thông tin cho kiến trúc sư phụ trách, anh/chị chờ cuộc gọi từ bên em trong thời gian sớm nhất nhé. Cần gấp anh/chị gọi hotline ${BRAND.hotline} ạ."
 Dòng [[CHUYEN_NGUOI ...]] khách sẽ không nhìn thấy.
 
