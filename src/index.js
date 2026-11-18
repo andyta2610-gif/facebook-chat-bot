@@ -101,8 +101,11 @@ async function handleEvent(event, env) {
   if (!psid) return;
 
   const text = (msg.text || "").trim();
-  const item = text ? { text } : msg.attachments?.length ? { attach: true } : null;
-  if (!item) return;
+  const atts = msg.attachments || [];
+  const images = atts.filter((a) => a.type === "image" && a.payload?.url).map((a) => a.payload.url).slice(0, 5);
+  const otherFiles = atts.some((a) => a.type !== "image");
+  if (!text && !atts.length) return;
+  const item = { ...(text ? { text } : {}), ...(images.length ? { images } : {}), ...(otherFiles ? { attach: true } : {}) };
 
   // Đưa tin vào hàng chờ; bot sẽ trả lời gộp khi khách ngừng nhắn
   const r = await convo(env, psid).fetch("https://do/add", {
@@ -200,6 +203,7 @@ export class Conversation {
   async reply(psid, pending) {
     const env = this.env, st = this.storage;
     const texts = pending.filter((x) => x.text).map((x) => x.text);
+    const images = pending.flatMap((x) => x.images || []).slice(0, 5);
     const hasAttach = pending.some((x) => x.attach);
 
     // Lịch sử: quên hội thoại cũ hơn 14 ngày (khách quay lại sẽ được chào lại)
@@ -207,8 +211,8 @@ export class Conversation {
     if (now() - ((await st.get("lastReplyAt")) || 0) > HISTORY_TTL * 1000) history = [];
     const isFirst = history.length === 0;
 
-    // Chỉ gửi hình/file, không có chữ
-    if (!texts.length) {
+    // Chỉ gửi file (không phải ảnh), không có chữ
+    if (!texts.length && !images.length) {
       await sendText(env, psid, ATTACHMENT_REPLY);
       history.push({ role: "user", content: "[Khách gửi hình ảnh/file]" }, { role: "assistant", content: ATTACHMENT_REPLY });
       await this.saveHistory(history);
@@ -216,7 +220,10 @@ export class Conversation {
       return;
     }
 
-    const userText = texts.join("\n") + (hasAttach ? "\n[Khách có gửi kèm hình ảnh/file]" : "");
+    const notes = [];
+    if (images.length) notes.push(`[Khách gửi ${images.length} ảnh]`);
+    if (hasAttach) notes.push("[Khách có gửi kèm file/video]");
+    const userText = [texts.join("\n"), ...notes].filter(Boolean).join("\n");
     history.push({ role: "user", content: userText });
 
     if (isFirst) {
@@ -226,7 +233,14 @@ export class Conversation {
 
     let reply = null, handoffReason = null;
     try {
-      const raw = await askClaude(env, history, isFirst);
+      let raw;
+      try {
+        raw = await askClaude(env, history, isFirst, images);
+      } catch (e) {
+        if (!images.length) throw e;
+        L(env, "image_error", e?.message);   // không đọc được ảnh → trả lời theo chữ
+        raw = await askClaude(env, history, isFirst);
+      }
       L(env, "claude_ok");
       const m = raw.match(HANDOFF_MARKER);
       if (m) handoffReason = (m[1] || "cần tư vấn viên").trim();
@@ -244,7 +258,7 @@ export class Conversation {
     if (said) history.push({ role: "assistant", content: said });
     await this.saveHistory(history);
 
-    if (hasAttach) await notify(env, `📎 Khách vừa gửi hình/file trên Fanpage. Vào hộp thư để xem: https://business.facebook.com/latest/inbox`);
+    if (hasAttach || images.length) await notify(env, `📎 Khách vừa gửi hình/file trên Fanpage. Vào hộp thư để xem: https://business.facebook.com/latest/inbox`);
     if (handoffReason) {
       L(env, "handoff", handoffReason);
       await this.setHandoff();
@@ -263,7 +277,15 @@ export class Conversation {
 function now() { return Date.now(); }
 
 // ---------------------------------------------------------------------
-async function askClaude(env, history, isFirst = false) {
+async function askClaude(env, history, isFirst = false, images = []) {
+  const messages = normalize(history);
+  if (images.length && messages.length) {
+    const last = messages[messages.length - 1];
+    last.content = [
+      ...images.map((url) => ({ type: "image", source: { type: "url", url } })),
+      { type: "text", text: last.content },
+    ];
+  }
   const now = new Date().toLocaleString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh" });
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -274,9 +296,9 @@ async function askClaude(env, history, isFirst = false) {
     },
     body: JSON.stringify({
       model: env.CLAUDE_MODEL || "claude-sonnet-5-5",
-      max_tokens: 600,
+      max_tokens: 1000,
       system: buildSystemPrompt(now) + (isFirst ? FIRST_MESSAGE_NOTE : ""),
-      messages: normalize(history),
+      messages,
     }),
   });
   if (!res.ok) throw new Error(`Claude API ${res.status}: ${await res.text()}`);

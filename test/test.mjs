@@ -154,16 +154,28 @@ calls.length = 0;
 await objects.get("U2").obj.alarm();
 assert.equal(sentTexts().length, 0, "nhân viên đã nhận khách thì bot không trả lời hàng chờ");
 
-// 9. Gửi ảnh kèm chữ → gộp 1 câu trả lời + báo anh
+// 9. Gửi ảnh kèm chữ → Claude được xem ảnh, gộp 1 câu trả lời + báo anh
 calls.length = 0;
-claudeReply = "Dạ em đã xem ạ.";
+claudeReply = "Dạ em thấy mặt bằng có phòng khách thông bếp ạ.";
 storageOf("U1").set("hist", [{ role: "user", content: "x" }, { role: "assistant", content: "y" }]);
-await post({ object: "page", entry: [{ messaging: [{ sender: { id: "U1" }, recipient: { id: "PAGE" }, message: { mid: "m8", attachments: [{ type: "image" }] } }] }] });
+await post({ object: "page", entry: [{ messaging: [{ sender: { id: "U1" }, recipient: { id: "PAGE" }, message: { mid: "m8", attachments: [{ type: "image", payload: { url: "https://cdn.fb/plan.jpg" } }] } }] }] });
 await post(msgEvent("U1", "Đây là mặt bằng nhà mình", "m9"));
 await fireAlarm("U1");
-assert.deepEqual(sentTexts(), ["Dạ em đã xem ạ."]);
-assert.ok(claudeCalls().at(-1).body.messages.at(-1).content.includes("gửi kèm hình"));
+assert.deepEqual(sentTexts(), ["Dạ em thấy mặt bằng có phòng khách thông bếp ạ."]);
+const lastMsg = claudeCalls().at(-1).body.messages.at(-1);
+assert.equal(lastMsg.content[0].type, "image");
+assert.equal(lastMsg.content[0].source.url, "https://cdn.fb/plan.jpg");
+assert.ok(lastMsg.content.at(-1).text.includes("mặt bằng nhà mình"));
 assert.ok(calls.some((c) => c.url.includes("telegram") && c.body.text.includes("hình/file")));
+const savedHist = storageOf("U1").get("hist");
+assert.ok(typeof savedHist.at(-2).content === "string" && savedHist.at(-2).content.includes("[Khách gửi 1 ảnh]"), "lịch sử chỉ lưu chữ, không lưu link ảnh");
+
+// 9b. Chỉ gửi ảnh, không chữ → bot vẫn xem và nhận xét
+calls.length = 0;
+claudeReply = "Dạ đây là phong cách Indochine ạ.";
+await post({ object: "page", entry: [{ messaging: [{ sender: { id: "U1" }, recipient: { id: "PAGE" }, message: { mid: "m8b", attachments: [{ type: "image", payload: { url: "https://cdn.fb/mau.jpg" } }] } }] }] });
+await fireAlarm("U1");
+assert.deepEqual(sentTexts(), ["Dạ đây là phong cách Indochine ạ."]);
 
 // 10. Lỗi Claude: khách mới vẫn có lời chào; khách cũ nhận câu dự phòng có hotline
 claudeFails = true;
