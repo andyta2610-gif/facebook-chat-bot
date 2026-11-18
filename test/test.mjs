@@ -26,7 +26,7 @@ const env = {
   BOT_KV, APP_ID: "111", APP_SECRET: "secret", VERIFY_TOKEN: "vt",
   PAGE_ACCESS_TOKEN: "pat", ANTHROPIC_API_KEY: "k",
   TELEGRAM_BOT_TOKEN: "tg", TELEGRAM_CHAT_ID: "1",
-  DEBOUNCE_SECONDS: "8", MAX_WAIT_SECONDS: "30",
+  DEBOUNCE_SECONDS: "8", MAX_WAIT_SECONDS: "30", TEST_PSIDS: "ADMIN",
   CONVO: {
     idFromName: (n) => n,
     get: (id) => {
@@ -188,6 +188,20 @@ calls.length = 0;
 await post(msgEvent("U1", "Báo giá giúp", "m10"));
 await fireAlarm("U1");
 assert.ok(sentTexts()[0].includes("0866625868"));
+
+// 10b. Lệnh thử nghiệm: chỉ tài khoản quản trị dùng được
+calls.length = 0;
+await post(msgEvent("ADMIN", "Chào", "a1"));
+await fireAlarm("ADMIN");
+storageOf("ADMIN").set("handoffUntil", Date.now() + 3600000);
+calls.length = 0;
+await post(msgEvent("ADMIN", "#reset", "a2"));
+assert.ok(sentTexts()[0].includes("Đã xoá lịch sử"));
+assert.equal(storageOf("ADMIN").has("handoffUntil"), false);
+assert.equal(storageOf("ADMIN").has("hist"), false);
+calls.length = 0;
+await post(msgEvent("U1", "#reset", "a3"));   // khách thường gõ #reset → coi như tin bình thường
+assert.ok(!sentTexts().some((t) => t.includes("Thử nghiệm")));
 
 // 11. Trang /status
 r = await worker.fetch(new Request("https://x/status"), env, {});

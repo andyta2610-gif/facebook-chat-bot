@@ -105,6 +105,18 @@ async function handleEvent(event, env) {
   const images = atts.filter((a) => a.type === "image" && a.payload?.url).map((a) => a.payload.url).slice(0, 5);
   const otherFiles = atts.some((a) => a.type !== "image");
   if (!text && !atts.length) return;
+
+  // Lệnh thử nghiệm dành cho tài khoản quản trị (TEST_PSIDS): #reset, #bot
+  const admins = String(env.TEST_PSIDS || "").split(",").map((x) => x.trim()).filter(Boolean);
+  const cmd = text.toLowerCase();
+  if (admins.includes(String(psid)) && (cmd === "#reset" || cmd === "#bot")) {
+    await convo(env, psid).fetch("https://do/admin", { method: "POST", body: JSON.stringify({ cmd }) });
+    L(env, "admin_" + cmd.slice(1));
+    await sendText(env, psid, cmd === "#reset"
+      ? "[Thử nghiệm] Đã xoá lịch sử và bật lại bot. Tin tiếp theo sẽ được xử lý như khách mới."
+      : "[Thử nghiệm] Đã bật lại bot cho hội thoại này.");
+    return;
+  }
   const item = { ...(text ? { text } : {}), ...(images.length ? { images } : {}), ...(otherFiles ? { attach: true } : {}) };
 
   // Đưa tin vào hàng chờ; bot sẽ trả lời gộp khi khách ngừng nhắn
@@ -160,6 +172,12 @@ export class Conversation {
       const maxWait = Number(this.env.MAX_WAIT_SECONDS || 30) * 1000;
       await st.setAlarm(Math.min(now + wait, firstAt + maxWait));
       return new Response("queued");
+    }
+
+    if (url.pathname === "/admin") {
+      await st.delete(["handoffUntil", "pending", "firstAt"]);
+      if (body.cmd === "#reset") await st.delete(["hist", "lastReplyAt"]);
+      return new Response("ok");
     }
 
     if (url.pathname === "/echo") {

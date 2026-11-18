@@ -11,6 +11,8 @@ DEBOUNCE_SECONDS = "8"
 MAX_WAIT_SECONDS = "30"
 # APP_ID: ID của app Meta (dạng số), dùng để phân biệt tin bot gửi với tin nhân viên gửi
 APP_ID = "2697118804024412"
+# Tài khoản Facebook được dùng lệnh thử nghiệm #reset / #bot khi nhắn vào Fanpage (PSID, cách nhau bằng dấu phẩy)
+TEST_PSIDS = "5637053403027195"
 
 # Mỗi khách một "Conversation" (Durable Object): lịch sử, hàng chờ tin, chuyển người thật
 [[durable_objects.bindings]]
