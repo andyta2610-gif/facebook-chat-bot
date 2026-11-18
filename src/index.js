@@ -27,6 +27,12 @@ export default {
       };
       return new Response(JSON.stringify(status, null, 2), { headers: { "content-type": "application/json; charset=utf-8" } });
     }
+    if (url.pathname === "/telegram/setup") {
+      return new Response(await tgSetup(env, url.origin), { headers: { "content-type": "text/plain; charset=utf-8" } });
+    }
+    if (url.pathname === "/telegram" && request.method === "POST") {
+      return tgWebhook(request, env);
+    }
     if (url.pathname === "/zalo/setup") {
       return new Response(await zaloSetup(env, url.origin), { headers: { "content-type": "text/plain; charset=utf-8" } });
     }
@@ -470,12 +476,10 @@ async function saveTrace(env, items) {
 // Báo cho anh qua Telegram (không bắt buộc)
 async function notify(env, text) {
   const jobs = [];
-  if (env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID) {
-    jobs.push(fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT_ID, text }),
-    }));
+  if (env.TELEGRAM_BOT_TOKEN) {
+    const chatId = env.TELEGRAM_CHAT_ID || (await env.BOT_KV.get("tg_chat_id"));
+    if (chatId) jobs.push(tgSend(env, chatId, text));
+    else L(env, "telegram_not_linked");
   }
   if (env.ZALO_BOT_TOKEN) {
     const chatId = env.ZALO_CHAT_ID || (await env.BOT_KV.get("zalo_chat_id"));
@@ -485,6 +489,63 @@ async function notify(env, text) {
   const results = await Promise.allSettled(jobs);
   for (const r of results) if (r.status === "rejected") console.error("notify error", r.reason);
   if (jobs.length) L(env, "notified");
+}
+
+// ---------------------------------------------------------------------
+//  Telegram: báo cho anh qua Telegram
+// ---------------------------------------------------------------------
+async function tgSend(env, chatId, text) {
+  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 4000) }),
+  });
+  if (!res.ok) L(env, "telegram_error", `${res.status} ${await res.text()}`);
+  return res;
+}
+
+async function tgSecret(env) {
+  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${env.APP_SECRET || ""}:tg-webhook`));
+  return [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 40);
+}
+
+// Mở /telegram/setup một lần để Telegram gửi tin nhắn về bot
+async function tgSetup(env, origin) {
+  if (!env.TELEGRAM_BOT_TOKEN) return "Chưa có TELEGRAM_BOT_TOKEN. Hãy thêm mã bot Telegram vào Cloudflare (Secret) rồi mở lại trang này.";
+  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setWebhook`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: `${origin}/telegram`, secret_token: await tgSecret(env), allowed_updates: ["message"] }),
+  });
+  const body = await res.text();
+  let ok = res.ok, name = "";
+  try { ok = ok && JSON.parse(body).ok; } catch {}
+  try {
+    const me = await (await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/getMe`)).json();
+    name = me.result?.username ? `@${me.result.username}` : "";
+  } catch {}
+  const linked = await env.BOT_KV.get("tg_chat_id");
+  return ok
+    ? `✅ Đã kết nối Telegram ${name}.\n${linked ? "Tài khoản Telegram nhận thông báo đã được liên kết." : `Bước cuối: mở Telegram, vào bot ${name} và bấm Start (hoặc nhắn /start) để liên kết.`}`
+    : `❌ Telegram báo lỗi: ${body.slice(0, 300)}`;
+}
+
+// Anh nhắn cho bot Telegram → liên kết tài khoản nhận thông báo (chỉ người đầu tiên)
+async function tgWebhook(request, env) {
+  if (request.headers.get("x-telegram-bot-api-secret-token") !== (await tgSecret(env))) return new Response("Forbidden", { status: 403 });
+  const body = await request.json().catch(() => ({}));
+  const chatId = body.message?.chat?.id;
+  if (!chatId) return new Response("ok");
+  const linked = await env.BOT_KV.get("tg_chat_id");
+  if (!linked) {
+    await env.BOT_KV.put("tg_chat_id", String(chatId));
+    await tgSend(env, chatId, "✅ Đã liên kết! Từ giờ khi khách trên Fanpage H+ studio để lại số điện thoại hoặc cần người tư vấn, em sẽ báo anh ở đây.");
+  } else if (linked === String(chatId)) {
+    await tgSend(env, chatId, "Tài khoản này đang nhận thông báo từ bot Fanpage H+ studio ạ.");
+  } else {
+    await tgSend(env, chatId, "Bot này đã được liên kết với một tài khoản khác.");
+  }
+  return new Response("ok");
 }
 
 // ---------------------------------------------------------------------

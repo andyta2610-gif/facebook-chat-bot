@@ -59,7 +59,7 @@ globalThis.fetch = async (url, init) => {
     if (claudeFails) return new Response("overloaded", { status: 529 });
     return new Response(JSON.stringify({ content: [{ type: "text", text: claudeReply }] }), { status: 200 });
   }
-  return new Response("{}", { status: 200 });
+  return new Response(JSON.stringify({ ok: true, result: { username: "hplus_bot" } }), { status: 200 });
 };
 
 async function sign(raw) {
@@ -292,6 +292,21 @@ await fireAlarm("U7");
 const zcall = calls.find((c) => c.url.includes("zaloplatforms") && c.url.endsWith("/sendMessage"));
 assert.ok(zcall && zcall.body.chat_id === "Z1");
 assert.ok(zcall.body.text.includes("0909123456") && zcall.body.text.includes("Thủ Đức"), "báo đủ thông tin khách");
+
+// 10f. Telegram tự liên kết qua /telegram/setup + /start
+const env2 = { ...env, TELEGRAM_CHAT_ID: undefined };
+calls.length = 0;
+r = await worker.fetch(new Request("https://bot.example/telegram/setup"), env2, {});
+assert.ok((await r.text()).includes("Đã kết nối Telegram"));
+const tset = calls.find((c) => c.url.includes("api.telegram.org") && c.url.endsWith("/setWebhook"));
+assert.equal(tset.body.url, "https://bot.example/telegram");
+const tmsg = (id) => JSON.stringify({ update_id: 1, message: { chat: { id }, text: "/start" } });
+r = await worker.fetch(new Request("https://bot.example/telegram", { method: "POST", body: tmsg(1), headers: { "x-telegram-bot-api-secret-token": "sai" } }), env2, {});
+assert.equal(r.status, 403);
+await worker.fetch(new Request("https://bot.example/telegram", { method: "POST", body: tmsg(777), headers: { "x-telegram-bot-api-secret-token": tset.body.secret_token } }), env2, {});
+assert.equal(kv.get("tg_chat_id"), "777");
+await worker.fetch(new Request("https://bot.example/telegram", { method: "POST", body: tmsg(888), headers: { "x-telegram-bot-api-secret-token": tset.body.secret_token } }), env2, {});
+assert.equal(kv.get("tg_chat_id"), "777", "người khác không chiếm được");
 
 // 11. Trang /status
 r = await worker.fetch(new Request("https://x/status"), env, {});
