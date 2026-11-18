@@ -1,25 +1,62 @@
 // Test giả lập: không gọi Facebook/Claude thật
 import assert from "node:assert/strict";
-import worker from "../src/index.js";
+import worker, { Conversation } from "../src/index.js";
 
+// ---- KV giả ----
 const kv = new Map();
 const BOT_KV = {
   async get(k) { return kv.has(k) ? kv.get(k) : null; },
   async put(k, v) { kv.set(k, v); },
   async delete(k) { kv.delete(k); },
 };
+
+// ---- Durable Object giả ----
+const objects = new Map(); // psid -> { obj, alarmAt }
+function makeStorage(rec) {
+  const m = new Map();
+  return {
+    async get(k) { return m.has(k) ? structuredClone(m.get(k)) : undefined; },
+    async put(k, v) { m.set(k, structuredClone(v)); },
+    async delete(k) { for (const x of [].concat(k)) m.delete(x); },
+    async setAlarm(t) { rec.alarmAt = t; },
+    _map: m,
+  };
+}
 const env = {
   BOT_KV, APP_ID: "111", APP_SECRET: "secret", VERIFY_TOKEN: "vt",
   PAGE_ACCESS_TOKEN: "pat", ANTHROPIC_API_KEY: "k",
   TELEGRAM_BOT_TOKEN: "tg", TELEGRAM_CHAT_ID: "1",
+  DEBOUNCE_SECONDS: "8", MAX_WAIT_SECONDS: "30",
+  CONVO: {
+    idFromName: (n) => n,
+    get: (id) => {
+      if (!objects.has(id)) {
+        const rec = { alarmAt: null };
+        rec.obj = new Conversation({ storage: makeStorage(rec) }, env);
+        objects.set(id, rec);
+      }
+      const rec = objects.get(id);
+      return { fetch: (url, init) => rec.obj.fetch(new Request(url, init)) };
+    },
+  },
 };
+async function fireAlarm(psid) {
+  const rec = objects.get(psid);
+  assert.ok(rec && rec.alarmAt, `phải có hẹn giờ trả lời cho ${psid}`);
+  rec.alarmAt = null;
+  await rec.obj.alarm();
+}
+const storageOf = (psid) => objects.get(psid).obj.storage._map;
 
+// ---- fetch giả ----
 let claudeReply = "Dạ chào anh/chị, em có thể giúp gì ạ?";
+let claudeFails = false;
 const calls = [];
 globalThis.fetch = async (url, init) => {
   const body = init?.body ? JSON.parse(init.body) : null;
   calls.push({ url: String(url), body });
   if (String(url).includes("anthropic")) {
+    if (claudeFails) return new Response("overloaded", { status: 529 });
     return new Response(JSON.stringify({ content: [{ type: "text", text: claudeReply }] }), { status: 200 });
   }
   return new Response("{}", { status: 200 });
@@ -30,7 +67,6 @@ async function sign(raw) {
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(raw));
   return "sha256=" + [...new Uint8Array(sig)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
-
 async function post(payload, goodSig = true) {
   const raw = JSON.stringify(payload);
   const waits = [];
@@ -42,7 +78,10 @@ async function post(payload, goodSig = true) {
   return res;
 }
 const msgEvent = (psid, text, mid) => ({ object: "page", entry: [{ messaging: [{ sender: { id: psid }, recipient: { id: "PAGE" }, message: { mid, text } }] }] });
+const echo = (psid, app_id, text, mid) => ({ object: "page", entry: [{ messaging: [{ sender: { id: "PAGE" }, recipient: { id: psid }, message: { is_echo: true, app_id, text, mid } }] }] });
 const sentTexts = () => calls.filter((c) => c.url.includes("graph.facebook") && c.body?.message?.text).map((c) => c.body.message.text);
+const claudeCalls = () => calls.filter((c) => c.url.includes("anthropic"));
+const GREET = "Chào anh/chị, cám ơn anh/chị đã dành thời gian quan tâm đến các thiết kế của H+ studio, em có thể giúp gì được cho mình ạ?";
 
 // 1. Xác minh webhook
 let r = await worker.fetch(new Request("https://x/webhook?hub.mode=subscribe&hub.verify_token=vt&hub.challenge=abc"), env, {});
@@ -54,71 +93,94 @@ assert.equal(r.status, 403);
 r = await post(msgEvent("U1", "hi", "m0"), false);
 assert.equal(r.status, 401);
 
-// 3. Tin đầu tiên chỉ chào → chỉ gửi lời chào cố định
-const GREET = "Chào anh/chị, cám ơn anh/chị đã dành thời gian quan tâm đến các thiết kế của H+ studio, em có thể giúp gì được cho mình ạ?";
+// 3. Tin đầu tiên chỉ chào → chưa trả lời ngay; tới giờ hẹn mới gửi lời chào cố định
 claudeReply = "[[KHONG_TRA_LOI]]";
 r = await post(msgEvent("U1", "Chào shop", "m1"));
 assert.equal(r.status, 200);
+assert.equal(sentTexts().length, 0, "chưa trả lời khi khách có thể còn nhắn tiếp");
+assert.ok(calls.some((c) => c.body?.sender_action === "typing_on"), "hiện đang soạn tin");
+await fireAlarm("U1");
 assert.deepEqual(sentTexts(), [GREET]);
-// 3b. Khách mới hỏi cụ thể ngay → lời chào + câu trả lời
-calls.length = 0;
-claudeReply = "Dạ bên em nhận thiết kế căn hộ ạ.";
-await post(msgEvent("U9", "Tôi cần thiết kế căn hộ", "m90"));
-assert.deepEqual(sentTexts(), [GREET, "Dạ bên em nhận thiết kế căn hộ ạ."]);
-claudeReply = "Dạ chào anh/chị, em có thể giúp gì ạ?";
 
-// 4. Meta gửi trùng → không trả lời lần 2
+// 4. Khách nhắn liền 3 tin → bot gộp lại, gọi Claude 1 lần, trả lời 1 lần
 calls.length = 0;
-await post(msgEvent("U1", "Chào shop", "m1"));
+claudeReply = "Dạ căn hộ 70m2 ở Vũng Tàu phong cách Indochine bên em làm được ạ.";
+await post(msgEvent("U1", "Mình cần thiết kế căn hộ", "m2"));
+await post(msgEvent("U1", "70m2", "m3"));
+await post(msgEvent("U1", "ở Vũng Tàu, thích Indochine", "m4"));
 assert.equal(sentTexts().length, 0);
+await fireAlarm("U1");
+assert.equal(claudeCalls().length, 1, "chỉ gọi Claude 1 lần cho cả 3 tin");
+const lastUser = claudeCalls()[0].body.messages.at(-1);
+assert.equal(lastUser.role, "user");
+assert.ok(lastUser.content.includes("70m2") && lastUser.content.includes("Indochine"), "Claude đọc đủ cả 3 tin");
+assert.deepEqual(sentTexts(), ["Dạ căn hộ 70m2 ở Vũng Tàu phong cách Indochine bên em làm được ạ."]);
+assert.deepEqual(claudeCalls()[0].body.messages.map((m) => m.role), ["user", "assistant", "user"]);
 
-// 5. Lịch sử được gửi kèm, xen kẽ đúng
+// 5. Meta gửi trùng → không xếp hàng lại
 calls.length = 0;
-await post(msgEvent("U1", "Nhà phố 5x20 ở Thủ Đức", "m2"));
-const claudeCall = calls.find((c) => c.url.includes("anthropic"));
-assert.deepEqual(claudeCall.body.messages.map((m) => m.role), ["user", "assistant", "user"]);
+await post(msgEvent("U1", "70m2", "m3"));
+assert.equal(objects.get("U1").alarmAt, null, "tin trùng không tạo lượt trả lời mới");
 
 // 6. Chuyển người: ẩn marker, báo Telegram, bot dừng
 calls.length = 0;
 claudeReply = "Dạ em đã chuyển cho kiến trúc sư ạ.\n[[CHUYEN_NGUOI: khách để lại SĐT]]";
-await post(msgEvent("U1", "SĐT anh 0909xxxxxx", "m3"));
+await post(msgEvent("U1", "SĐT anh 0909xxxxxx", "m5"));
+await fireAlarm("U1");
 assert.deepEqual(sentTexts(), ["Dạ em đã chuyển cho kiến trúc sư ạ."]);
 assert.ok(calls.some((c) => c.url.includes("telegram") && c.body.text.includes("khách để lại SĐT")));
 calls.length = 0;
-await post(msgEvent("U1", "Alo?", "m4"));
-assert.equal(calls.filter((c) => c.url.includes("anthropic")).length, 0, "bot phải im khi đang chuyển người");
+await post(msgEvent("U1", "Alo?", "m6"));
+assert.equal(objects.get("U1").alarmAt, null, "bot phải im khi đang chuyển người");
 
 // 7. Nhân viên gõ #bot → bot bật lại
-await post({ object: "page", entry: [{ messaging: [{ sender: { id: "PAGE" }, recipient: { id: "U1" }, message: { is_echo: true, app_id: 999, text: "#bot", mid: "e1" } }] }] });
+await post(echo("U1", 999, "#bot", "e1"));
 claudeReply = "Dạ em đây ạ.";
 calls.length = 0;
-await post(msgEvent("U1", "Còn ai không", "m5"));
+await post(msgEvent("U1", "Còn ai không", "m7"));
+await fireAlarm("U1");
 assert.deepEqual(sentTexts(), ["Dạ em đây ạ."]);
 
-// 8. Nhân viên tự trả lời tay → bot dừng với khách đó; echo của chính bot thì không
-await post({ object: "page", entry: [{ messaging: [{ sender: { id: "PAGE" }, recipient: { id: "U2" }, message: { is_echo: true, app_id: 111, text: "bot msg", mid: "e2" } }] }] });
-assert.equal(kv.has("handoff:U2"), false);
-// 8b. Tin tự động của Meta ngay sau tin khách → không tắt bot
+// 8. Echo của chính bot không tắt bot; tin tự động của Meta ngay sau tin khách cũng không
 await post(msgEvent("U2", "Chào", "m20"));
-await post({ object: "page", entry: [{ messaging: [{ sender: { id: "PAGE" }, recipient: { id: "U2" }, message: { is_echo: true, app_id: 263902037430900, text: "Cảm ơn bạn đã nhắn tin", mid: "e20" } }] }] });
-assert.equal(kv.has("handoff:U2"), false, "tin tự động của Meta không được tắt bot");
-kv.set("lastin:U2", String(Date.now() - 60000)); // giả lập 1 phút sau
-await post({ object: "page", entry: [{ messaging: [{ sender: { id: "PAGE" }, recipient: { id: "U2" }, message: { is_echo: true, app_id: 263902037430900, text: "Chào anh, em là KTS", mid: "e3" } }] }] });
-assert.equal(kv.has("handoff:U2"), true);
+await post(echo("U2", 111, "bot msg", "e2"));
+await post(echo("U2", 263902037430900, "Cảm ơn bạn đã nhắn tin", "e3"));
+assert.equal(storageOf("U2").has("handoffUntil"), false, "tin tự động không được tắt bot");
+// 8b. Nhân viên trả lời tay (1 phút sau) → bot dừng, huỷ hàng chờ
+storageOf("U2").set("lastIn", Date.now() - 60000);
+await post(echo("U2", 263902037430900, "Chào anh, em là KTS", "e4"));
+assert.ok(storageOf("U2").get("handoffUntil") > Date.now());
+calls.length = 0;
+await objects.get("U2").obj.alarm();
+assert.equal(sentTexts().length, 0, "nhân viên đã nhận khách thì bot không trả lời hàng chờ");
 
-// 9. Lỗi Claude → câu trả lời dự phòng + báo người
-globalThis.fetch = async (url, init) => {
-  calls.push({ url: String(url), body: init?.body ? JSON.parse(init.body) : null });
-  if (String(url).includes("anthropic")) return new Response("overloaded", { status: 529 });
-  return new Response("{}", { status: 200 });
-};
+// 9. Gửi ảnh kèm chữ → gộp 1 câu trả lời + báo anh
 calls.length = 0;
-await post(msgEvent("U3", "Báo giá giúp", "m6"));
-assert.deepEqual(sentTexts(), [GREET], "khách mới + lỗi AI: vẫn có lời chào");
+claudeReply = "Dạ em đã xem ạ.";
+storageOf("U1").set("hist", [{ role: "user", content: "x" }, { role: "assistant", content: "y" }]);
+await post({ object: "page", entry: [{ messaging: [{ sender: { id: "U1" }, recipient: { id: "PAGE" }, message: { mid: "m8", attachments: [{ type: "image" }] } }] }] });
+await post(msgEvent("U1", "Đây là mặt bằng nhà mình", "m9"));
+await fireAlarm("U1");
+assert.deepEqual(sentTexts(), ["Dạ em đã xem ạ."]);
+assert.ok(claudeCalls().at(-1).body.messages.at(-1).content.includes("gửi kèm hình"));
+assert.ok(calls.some((c) => c.url.includes("telegram") && c.body.text.includes("hình/file")));
+
+// 10. Lỗi Claude: khách mới vẫn có lời chào; khách cũ nhận câu dự phòng có hotline
+claudeFails = true;
 calls.length = 0;
-kv.delete("handoff:U1");
-await post(msgEvent("U1", "Báo giá giúp", "m7"));
-assert.ok(sentTexts()[0].includes("0866625868"), "khách cũ + lỗi AI: câu dự phòng có hotline");
-assert.equal(kv.has("handoff:U3"), true);
+await post(msgEvent("U3", "Báo giá giúp", "m30"));
+await fireAlarm("U3");
+assert.deepEqual(sentTexts(), [GREET]);
+assert.ok(storageOf("U3").get("handoffUntil") > Date.now());
+calls.length = 0;
+await post(msgEvent("U1", "Báo giá giúp", "m10"));
+await fireAlarm("U1");
+assert.ok(sentTexts()[0].includes("0866625868"));
+
+// 11. Trang /status
+r = await worker.fetch(new Request("https://x/status"), env, {});
+const st = await r.json();
+assert.equal(st.secrets.APP_SECRET, true);
+assert.ok(st.trace.length > 0);
 
 console.log("✅ Tất cả test đều đạt");

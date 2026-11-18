@@ -90,88 +90,177 @@ async function handleEvent(event, env) {
     const customerId = event.recipient?.id;
     const fromOurBot = String(msg.app_id || "") === String(env.APP_ID || "");
     if (!customerId || fromOurBot) return;
-    // Nhân viên trả lời tay → bot tạm dừng với khách này
-    const text = (msg.text || "").trim().toLowerCase();
-    if (text === "#bot") {
-      await env.BOT_KV.delete(`handoff:${customerId}`);
-      return;
-    }
-    // Tin trả lời tự động của Meta (gửi vài giây sau tin khách) không phải người thật → bỏ qua
-    const lastIn = Number(await env.BOT_KV.get(`lastin:${customerId}`) || 0);
-    if (Date.now() - lastIn < AUTO_REPLY_WINDOW_MS) { L(env, "echo_auto_ignored"); return; }
-    L(env, "echo_human_handoff");
-    await setHandoff(env, customerId);
+    const r = await convo(env, customerId).fetch("https://do/echo", {
+      method: "POST", body: JSON.stringify({ text: msg.text || "" }),
+    });
+    L(env, "echo", await r.text());
     return;
   }
 
   const psid = event.sender?.id;
   if (!psid) return;
-  await env.BOT_KV.put(`lastin:${psid}`, String(Date.now()), { expirationTtl: 3600 });
-
-  // Chống xử lý trùng khi Meta gửi lại
-  if (msg.mid) {
-    const seenKey = `mid:${msg.mid}`;
-    if (await env.BOT_KV.get(seenKey)) { L(env, "skip_duplicate"); return; }
-    await env.BOT_KV.put(seenKey, "1", { expirationTtl: 60 * 60 * 24 });
-  }
-
-  // Đang có người thật phụ trách → bot im lặng
-  if (await env.BOT_KV.get(`handoff:${psid}`)) { L(env, "skip_handoff"); return; }
 
   const text = (msg.text || "").trim();
-  if (!text) {
-    if (msg.attachments?.length) {
-      await sendText(env, psid, ATTACHMENT_REPLY);
-      await appendHistory(env, psid, [
-        { role: "user", content: "[Khách gửi hình ảnh/file]" },
-        { role: "assistant", content: ATTACHMENT_REPLY },
-      ]);
-      await notify(env, `📎 Khách vừa gửi hình/file trên Fanpage (PSID ${psid}). Vào hộp thư để xem.`);
-    }
-    return;
-  }
+  const item = text ? { text } : msg.attachments?.length ? { attach: true } : null;
+  if (!item) return;
 
-  await senderAction(env, psid, "mark_seen");
-  await senderAction(env, psid, "typing_on");
-
-  const history = await loadHistory(env, psid);
-  const isFirst = history.length === 0;
-  history.push({ role: "user", content: text });
-
-  // Tin đầu tiên của khách: luôn gửi lời chào cố định trước
-  if (isFirst) {
-    await sendText(env, psid, GREETING);
-    L(env, "greeting");
-  }
-
-  let reply = null, handoffReason = null;
-  try {
-    const raw = await askClaude(env, history, isFirst);
-    L(env, "claude_ok");
-    const m = raw.match(HANDOFF_MARKER);
-    if (m) handoffReason = (m[1] || "cần tư vấn viên").trim();
-    if (SKIP_MARKER.test(raw)) reply = null;   // khách chỉ chào hỏi → lời chào là đủ
-    else reply = raw.replace(HANDOFF_MARKER, "").trim() || (isFirst ? null : FALLBACK_REPLY);
-  } catch (e) {
-    console.error("claude error", e);
-    L(env, "claude_error", e?.message);
-    reply = isFirst ? null : FALLBACK_REPLY;
-    handoffReason = "Bot gặp lỗi khi gọi AI";
-  }
-
-  if (reply) await sendText(env, psid, reply);
-  const said = [isFirst ? GREETING : null, reply].filter(Boolean).join("\n");
-  if (said) history.push({ role: "assistant", content: said });
-  await saveHistory(env, psid, history);
-
-  if (handoffReason) {
-    L(env, "handoff", handoffReason);
-    await setHandoff(env, psid);
-    await notify(env,
-      `🔔 Khách Fanpage cần tư vấn viên\nLý do: ${handoffReason}\nTin cuối: "${text.slice(0, 300)}"\n` +
-      `Trả lời tại: https://business.facebook.com/latest/inbox\n(Bot đã tạm dừng với khách này. Gõ #bot trong hội thoại để bật lại.)`);
+  // Đưa tin vào hàng chờ; bot sẽ trả lời gộp khi khách ngừng nhắn
+  const r = await convo(env, psid).fetch("https://do/add", {
+    method: "POST", body: JSON.stringify({ psid, mid: msg.mid, item }),
+  });
+  const status = await r.text();
+  L(env, status);
+  if (status === "queued") {
+    await senderAction(env, psid, "mark_seen");
+    await senderAction(env, psid, "typing_on");
   }
 }
+
+function convo(env, psid) {
+  return env.CONVO.get(env.CONVO.idFromName(String(psid)));
+}
+
+// =====================================================================
+//  Mỗi khách có một "Conversation" riêng: giữ lịch sử, hàng chờ tin nhắn,
+//  trạng thái chuyển người thật. Bot chờ khách ngừng nhắn rồi trả lời 1 lần.
+// =====================================================================
+export class Conversation {
+  constructor(state, env) {
+    this.state = state;
+    this.storage = state.storage;
+    this.env = env;
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    const body = await request.json().catch(() => ({}));
+    const st = this.storage;
+    const now = Date.now();
+
+    if (url.pathname === "/add") {
+      // Chống trùng khi Meta gửi lại
+      const mids = (await st.get("mids")) || [];
+      if (body.mid && mids.includes(body.mid)) return new Response("skip_duplicate");
+      if (body.mid) await st.put("mids", [...mids, body.mid].slice(-50));
+
+      await st.put("psid", body.psid);
+      await st.put("lastIn", now);
+      if (((await st.get("handoffUntil")) || 0) > now) return new Response("skip_handoff");
+
+      const pending = (await st.get("pending")) || [];
+      pending.push(body.item);
+      await st.put("pending", pending);
+      let firstAt = await st.get("firstAt");
+      if (!firstAt) { firstAt = now; await st.put("firstAt", firstAt); }
+
+      const wait = Number(this.env.DEBOUNCE_SECONDS || 8) * 1000;
+      const maxWait = Number(this.env.MAX_WAIT_SECONDS || 30) * 1000;
+      await st.setAlarm(Math.min(now + wait, firstAt + maxWait));
+      return new Response("queued");
+    }
+
+    if (url.pathname === "/echo") {
+      const text = String(body.text || "").trim().toLowerCase();
+      if (text === "#bot") { await st.delete("handoffUntil"); return new Response("bot_resumed"); }
+      // Tin tự động của Meta (vài giây sau tin khách) không phải người thật
+      if (now - ((await st.get("lastIn")) || 0) < AUTO_REPLY_WINDOW_MS) return new Response("echo_auto_ignored");
+      await this.setHandoff();
+      await st.delete(["pending", "firstAt"]);
+      return new Response("echo_human_handoff");
+    }
+
+    return new Response("not found", { status: 404 });
+  }
+
+  async alarm() {
+    const st = this.storage;
+    const pending = (await st.get("pending")) || [];
+    const psid = await st.get("psid");
+    await st.delete(["pending", "firstAt"]);
+    if (!pending.length || !psid) return;
+
+    const tr = [];
+    this.env.__log = (stage, detail) => tr.push({ t: Date.now(), s: stage, ...(detail ? { d: String(detail).slice(0, 300) } : {}) });
+    L(this.env, "reply_batch", `${pending.length} tin`);
+    try {
+      if (((await st.get("handoffUntil")) || 0) > Date.now()) L(this.env, "skip_handoff");
+      else await this.reply(psid, pending);
+    } catch (e) {
+      console.error("reply error", e);
+      L(this.env, "error", e?.message || e);
+    }
+    await saveTrace(this.env, tr).catch(() => {});
+  }
+
+  async setHandoff() {
+    const hours = Number(this.env.HANDOFF_HOURS || 12);
+    await this.storage.put("handoffUntil", Date.now() + hours * 3600 * 1000);
+  }
+
+  async reply(psid, pending) {
+    const env = this.env, st = this.storage;
+    const texts = pending.filter((x) => x.text).map((x) => x.text);
+    const hasAttach = pending.some((x) => x.attach);
+
+    // Lịch sử: quên hội thoại cũ hơn 14 ngày (khách quay lại sẽ được chào lại)
+    let history = (await st.get("hist")) || [];
+    if (now() - ((await st.get("lastReplyAt")) || 0) > HISTORY_TTL * 1000) history = [];
+    const isFirst = history.length === 0;
+
+    // Chỉ gửi hình/file, không có chữ
+    if (!texts.length) {
+      await sendText(env, psid, ATTACHMENT_REPLY);
+      history.push({ role: "user", content: "[Khách gửi hình ảnh/file]" }, { role: "assistant", content: ATTACHMENT_REPLY });
+      await this.saveHistory(history);
+      await notify(env, `📎 Khách vừa gửi hình/file trên Fanpage. Vào hộp thư để xem: https://business.facebook.com/latest/inbox`);
+      return;
+    }
+
+    const userText = texts.join("\n") + (hasAttach ? "\n[Khách có gửi kèm hình ảnh/file]" : "");
+    history.push({ role: "user", content: userText });
+
+    if (isFirst) {
+      await sendText(env, psid, GREETING);
+      L(env, "greeting");
+    }
+
+    let reply = null, handoffReason = null;
+    try {
+      const raw = await askClaude(env, history, isFirst);
+      L(env, "claude_ok");
+      const m = raw.match(HANDOFF_MARKER);
+      if (m) handoffReason = (m[1] || "cần tư vấn viên").trim();
+      if (SKIP_MARKER.test(raw)) reply = null;   // khách chỉ chào hỏi → lời chào là đủ
+      else reply = raw.replace(HANDOFF_MARKER, "").trim() || (isFirst ? null : FALLBACK_REPLY);
+    } catch (e) {
+      console.error("claude error", e);
+      L(env, "claude_error", e?.message);
+      reply = isFirst ? null : FALLBACK_REPLY;
+      handoffReason = "Bot gặp lỗi khi gọi AI";
+    }
+
+    if (reply) await sendText(env, psid, reply);
+    const said = [isFirst ? GREETING : null, reply].filter(Boolean).join("\n");
+    if (said) history.push({ role: "assistant", content: said });
+    await this.saveHistory(history);
+
+    if (hasAttach) await notify(env, `📎 Khách vừa gửi hình/file trên Fanpage. Vào hộp thư để xem: https://business.facebook.com/latest/inbox`);
+    if (handoffReason) {
+      L(env, "handoff", handoffReason);
+      await this.setHandoff();
+      await notify(env,
+        `🔔 Khách Fanpage cần tư vấn viên\nLý do: ${handoffReason}\nTin cuối: "${userText.slice(0, 300)}"\n` +
+        `Trả lời tại: https://business.facebook.com/latest/inbox\n(Bot đã tạm dừng với khách này. Gõ #bot trong hội thoại để bật lại.)`);
+    }
+  }
+
+  async saveHistory(history) {
+    await this.storage.put("hist", history.slice(-HISTORY_LIMIT));
+    await this.storage.put("lastReplyAt", now());
+  }
+}
+
+function now() { return Date.now(); }
 
 // ---------------------------------------------------------------------
 async function askClaude(env, history, isFirst = false) {
@@ -212,28 +301,6 @@ function normalize(history) {
   }
   while (out.length && out[0].role !== "user") out.shift();
   return out;
-}
-
-// ---------------------------------------------------------------------
-async function loadHistory(env, psid) {
-  const raw = await env.BOT_KV.get(`hist:${psid}`);
-  try { return raw ? JSON.parse(raw) : []; } catch { return []; }
-}
-
-async function saveHistory(env, psid, history) {
-  const trimmed = history.slice(-HISTORY_LIMIT);
-  await env.BOT_KV.put(`hist:${psid}`, JSON.stringify(trimmed), { expirationTtl: HISTORY_TTL });
-}
-
-async function appendHistory(env, psid, items) {
-  const h = await loadHistory(env, psid);
-  h.push(...items);
-  await saveHistory(env, psid, h);
-}
-
-async function setHandoff(env, psid) {
-  const hours = Number(env.HANDOFF_HOURS || 12);
-  await env.BOT_KV.put(`handoff:${psid}`, "1", { expirationTtl: Math.max(60, Math.round(hours * 3600)) });
 }
 
 // ---------------------------------------------------------------------

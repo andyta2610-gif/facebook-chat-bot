@@ -6,8 +6,20 @@ keep_vars = true   # giữ các biến anh nhập trên Cloudflare, không bị 
 [vars]
 CLAUDE_MODEL = "claude-sonnet-5-5"
 HANDOFF_HOURS = "12"
+# Bot chờ khách ngừng nhắn bao nhiêu giây rồi mới trả lời gộp (tối đa MAX_WAIT_SECONDS)
+DEBOUNCE_SECONDS = "8"
+MAX_WAIT_SECONDS = "30"
 # APP_ID: ID của app Meta (dạng số), dùng để phân biệt tin bot gửi với tin nhân viên gửi
 APP_ID = "2697118804024412"
+
+# Mỗi khách một "Conversation" (Durable Object): lịch sử, hàng chờ tin, chuyển người thật
+[[durable_objects.bindings]]
+name = "CONVO"
+class_name = "Conversation"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Conversation"]
 
 [[kv_namespaces]]
 binding = "BOT_KV"
